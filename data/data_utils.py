@@ -6,14 +6,16 @@ import torch
 def subsample_instances(dataset, prop_indices_to_subsample=0.8):
 
     np.random.seed(0)
-    subsample_indices = np.random.choice(range(len(dataset)), replace=False,
-                                         size=(int(prop_indices_to_subsample * len(dataset)),))
+    subsample_indices = np.random.choice(
+        range(len(dataset)),
+        replace=False,
+        size=(int(prop_indices_to_subsample * len(dataset)),),
+    )
 
     return subsample_indices
 
 
 class MergedDataset(Dataset):
-
     """
     Takes two datasets (labelled_dataset, unlabelled_dataset) and merges them
     Allows you to iterate over them in parallel
@@ -33,9 +35,10 @@ class MergedDataset(Dataset):
 
         else:
 
-            img, label, uq_idx = self.unlabelled_dataset[item - len(self.labelled_dataset)]
+            img, label, uq_idx = self.unlabelled_dataset[
+                item - len(self.labelled_dataset)
+            ]
             labeled_or_not = 0
-
 
         return img, label, uq_idx, np.array([labeled_or_not])
 
@@ -44,13 +47,14 @@ class MergedDataset(Dataset):
 
 
 class MergedUnlabelledDataset(Dataset):
-
     """
     Takes two datasets (labelled_dataset, unlabelled_dataset) and merges them
     Allows you to iterate over them in parallel
     """
 
-    def __init__(self, old_unlabelled_dataset, novel_unlabelled_dataset, pretrain=False):
+    def __init__(
+        self, old_unlabelled_dataset, novel_unlabelled_dataset, pretrain=False
+    ):
 
         self.old_unlabelled_dataset = old_unlabelled_dataset
         self.novel_unlabelled_dataset = novel_unlabelled_dataset
@@ -62,7 +66,9 @@ class MergedUnlabelledDataset(Dataset):
         if item < len(self.old_unlabelled_dataset):
             img, label, uq_idx = self.old_unlabelled_dataset[item]
         else:
-            img, label, uq_idx = self.novel_unlabelled_dataset[item - len(self.old_unlabelled_dataset)]
+            img, label, uq_idx = self.novel_unlabelled_dataset[
+                item - len(self.old_unlabelled_dataset)
+            ]
 
         if self.pretrain:
             labeled_or_not = 1
