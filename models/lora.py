@@ -35,11 +35,25 @@ class Linear(nn.Module):
             self.bias = None
 
         self.lora_rank = lora_rank
-        if lora_rank > 0:
-            self.scaling = 1.0 if lora_alpha is None else lora_alpha / lora_rank
-            self.lora_a = nn.Parameter(torch.empty((lora_rank, in_features)))
-            self.lora_b = nn.Parameter(torch.empty((out_features, lora_rank)))
-            self.lora_dropout = nn.Dropout(p=lora_dropout)
+        self.init_lora(in_features, out_features, lora_rank, lora_alpha, lora_dropout)
+
+    def init_lora(
+        self,
+        in_features: int,
+        out_features: int,
+        r: int,
+        alpha: float = None,
+        dropout: float = 0.0,
+    ):
+        """
+        Initialize LoRA parameters.
+        This method can be called to reinitialize LoRA parameters if needed.
+        """
+        if r > 0:
+            self.scaling = 1.0 if alpha is None else alpha / r
+            self.lora_a = nn.Parameter(torch.empty((r, in_features)))
+            self.lora_b = nn.Parameter(torch.empty((out_features, r)))
+            self.lora_dropout = nn.Dropout(dropout)
             with torch.no_grad():
                 nn.init.kaiming_uniform_(self.lora_a, a=5**0.5)
                 nn.init.zeros_(self.lora_b)
@@ -52,7 +66,9 @@ class Linear(nn.Module):
     def forward(self, x: torch.Tensor):
         result = nn.functional.linear(x, self.weight, bias=self.bias)
         if self.lora_rank > 0:
-            result += (x @ self.lora_a.T @ self.lora_b.T) * self.scaling
+            result += (
+                self.lora_dropout(x) @ self.lora_a.T @ self.lora_b.T
+            ) * self.scaling
         return result
 
     # def load_state_dict(self, state_dict: dict, strict: bool = True):
