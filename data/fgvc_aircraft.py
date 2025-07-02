@@ -1,12 +1,12 @@
 import os
-import numpy as np
 from copy import deepcopy
 
-from torchvision.datasets.folder import default_loader
+import numpy as np
 from torch.utils.data import Dataset
+from torchvision.datasets.folder import default_loader
 
-from data.data_utils import subsample_instances
 from config import aircraft_root
+from data.data_utils import subsample_instances
 
 
 def make_dataset(dir, image_ids, targets):
@@ -153,8 +153,9 @@ class FGVCAircraft(Dataset):
 
     def download(self):
         """Download the FGVC-Aircraft data if it doesn't exist already."""
-        from six.moves import urllib
         import tarfile
+
+        from six.moves import urllib
 
         if self._check_exists():
             return

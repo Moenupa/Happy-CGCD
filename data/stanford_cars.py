@@ -1,14 +1,14 @@
 import os
-import pandas as pd
-import numpy as np
 from copy import deepcopy
+
+import numpy as np
+import pandas as pd
 from scipy import io as mat_io
-
-from torchvision.datasets.folder import default_loader
 from torch.utils.data import Dataset
+from torchvision.datasets.folder import default_loader
 
-from data.data_utils import subsample_instances
 from config import car_root
+from data.data_utils import subsample_instances
 
 
 class CarsDataset(Dataset):

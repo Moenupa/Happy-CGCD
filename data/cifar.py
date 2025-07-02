@@ -1,10 +1,10 @@
-from torchvision.datasets import CIFAR10, CIFAR100
 from copy import deepcopy
+
 import numpy as np
+from torchvision.datasets import CIFAR10, CIFAR100
 
-from data.data_utils import subsample_instances
 from config import cifar_10_root, cifar_100_root
-
+from data.data_utils import subsample_instances
 
 # dataset_split_config_dict = {
 #     'cifar100': {#'offline_old_cls_num': 80,

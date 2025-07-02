@@ -1,15 +1,14 @@
 import os
-import pandas as pd
-import numpy as np
 from copy import deepcopy
 
+import numpy as np
+import pandas as pd
+from torch.utils.data import Dataset
 from torchvision.datasets.folder import default_loader
 from torchvision.datasets.utils import download_url
-from torch.utils.data import Dataset
 
-from data.data_utils import subsample_instances
 from config import cub_root
-
+from data.data_utils import subsample_instances
 
 # dataset_split_config_dict = {
 #     'cub': {#'offline_old_cls_num': 100,

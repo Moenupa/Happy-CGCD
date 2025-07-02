@@ -1,21 +1,21 @@
 from __future__ import division, print_function
+
+import matplotlib
 import numpy as np
 import sklearn.metrics
 import torch
 import torch.nn as nn
-import matplotlib
 
 matplotlib.use("agg")
-from scipy.optimize import linear_sum_assignment as linear_assignment
-import random
-import os
 import argparse
-
-from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
-from sklearn.metrics import adjusted_rand_score as ari_score
-
-from sklearn import metrics
+import os
+import random
 import time
+
+from scipy.optimize import linear_sum_assignment as linear_assignment
+from sklearn import metrics
+from sklearn.metrics import adjusted_rand_score as ari_score
+from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
 
 
 # -------------------------------

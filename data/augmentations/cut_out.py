@@ -2,8 +2,8 @@
 https://github.com/hysts/pytorch_cutout
 """
 
-import torch
 import numpy as np
+import torch
 
 
 def cutout(mask_size, p, cutout_inside, mask_color=(0, 0, 0)):

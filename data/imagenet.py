@@ -1,12 +1,11 @@
-import torchvision
-import numpy as np
-
 import os
-
 from copy import deepcopy
-from data.data_utils import subsample_instances
-from config import imagenet_root
 
+import numpy as np
+import torchvision
+
+from config import imagenet_root
+from data.data_utils import subsample_instances
 
 # dataset_split_config_dict = {
 #     'imagenet_100': {#'offline_old_cls_num': 50,

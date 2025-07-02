@@ -1,6 +1,6 @@
 import numpy as np
-from torch.utils.data import Dataset
 import torch
+from torch.utils.data import Dataset
 
 
 def subsample_instances(dataset, prop_indices_to_subsample=0.8):

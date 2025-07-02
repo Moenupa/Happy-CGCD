@@ -1,21 +1,16 @@
 import os
+import warnings
 from copy import deepcopy
+
 import numpy as np
 import pandas as pd
-import warnings
-from torchvision.datasets import ImageFolder
-from torchvision.datasets import VisionDataset
+from torchvision.datasets import ImageFolder, VisionDataset
 from torchvision.datasets.folder import default_loader
-from torchvision.datasets.utils import (
-    extract_archive,
-    check_integrity,
-    download_url,
-    verify_str_arg,
-)
+from torchvision.datasets.utils import (check_integrity, download_url,
+                                        extract_archive, verify_str_arg)
 
-from data.data_utils import subsample_instances
 from config import tiny_imagenet_root
-
+from data.data_utils import subsample_instances
 
 # dataset_split_config_dict = {
 #     'tiny_imagenet': {#'offline_old_cls_num': 100,

@@ -1,40 +1,29 @@
 import argparse
-import os
 import math
+import os
 import time
-from tqdm import tqdm
+import warnings
 from copy import deepcopy
 
-from sklearn.cluster import KMeans
 import numpy as np
-from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
+from sklearn.cluster import KMeans
 from torch.optim import SGD, lr_scheduler
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from project_utils.general_utils import set_seed, init_experiment, AverageMeter
-from project_utils.cluster_and_log_utils import log_accs_from_preds
-
-from data.augmentations import get_transform
-from data.get_datasets import (
-    get_class_splits,
-    ContrastiveLearningViewGenerator,
-    get_datasets,
-)
-
-from models.utils_simgcd import (
-    DINOHead,
-    get_params_groups,
-    SupConLoss,
-    info_nce_logits,
-    DistillLoss,
-)
-from models.utils_simgcd_pro import get_kmeans_centroid_for_new_head
-from models.utils_proto_aug import ProtoAugManager
-from models import vision_transformer as vits
 from config import dino_pretrain_path, exp_root_happy
-
-import warnings
+from data.augmentations import get_transform
+from data.get_datasets import (ContrastiveLearningViewGenerator,
+                               get_class_splits, get_datasets)
+from models import vision_transformer as vits
+from models.utils_proto_aug import ProtoAugManager
+from models.utils_simgcd import (DINOHead, DistillLoss, SupConLoss,
+                                 get_params_groups, info_nce_logits)
+from models.utils_simgcd_pro import get_kmeans_centroid_for_new_head
+from project_utils.cluster_and_log_utils import log_accs_from_preds
+from project_utils.general_utils import AverageMeter, init_experiment, set_seed
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)

@@ -1,27 +1,25 @@
+import os
+import pickle
+from copy import deepcopy
+
 import torch
 from tqdm import tqdm
-from copy import deepcopy
-import pickle
-import os
-
-from data.data_utils import MergedDataset, MergedUnlabelledDataset
-
-from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets
-from data.tiny_imagenet import get_tiny_imagenet_datasets
-from data.imagenet import get_imagenet_100_datasets
-from data.cub import get_cub_datasets
-from data.fgvc_aircraft import get_aircraft_datasets
-from data.stanford_cars import get_scars_datasets
-
-from data.cifar import subsample_classes as subsample_dataset_cifar
-from data.tiny_imagenet import subsample_classes as subsample_dataset_tiny_imagenet
-from data.imagenet import subsample_classes as subsample_dataset_imagenet
-from data.cub import subsample_classes as subsample_dataset_cub
-from data.fgvc_aircraft import subsample_classes as subsample_dataset_aircraft
-from data.stanford_cars import subsample_classes as subsample_dataset_scars
 
 from config import osr_split_dir
-
+from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets
+from data.cifar import subsample_classes as subsample_dataset_cifar
+from data.cub import get_cub_datasets
+from data.cub import subsample_classes as subsample_dataset_cub
+from data.data_utils import MergedDataset, MergedUnlabelledDataset
+from data.fgvc_aircraft import get_aircraft_datasets
+from data.fgvc_aircraft import subsample_classes as subsample_dataset_aircraft
+from data.imagenet import get_imagenet_100_datasets
+from data.imagenet import subsample_classes as subsample_dataset_imagenet
+from data.stanford_cars import get_scars_datasets
+from data.stanford_cars import subsample_classes as subsample_dataset_scars
+from data.tiny_imagenet import get_tiny_imagenet_datasets
+from data.tiny_imagenet import \
+    subsample_classes as subsample_dataset_tiny_imagenet
 
 sub_sample_class_funcs = {
     "cifar10": subsample_dataset_cifar,

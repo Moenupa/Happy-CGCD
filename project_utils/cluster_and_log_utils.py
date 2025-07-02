@@ -1,6 +1,6 @@
-from project_utils.cluster_utils import cluster_acc, np, linear_assignment
 from typing import List
 
+from project_utils.cluster_utils import cluster_acc, linear_assignment, np
 
 # def split_cluster_acc_v1(y_true, y_pred, mask, args):
 

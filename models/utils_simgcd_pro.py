@@ -1,7 +1,8 @@
 from copy import deepcopy
+
 import numpy as np
-from sklearn.cluster import KMeans
 import torch
+from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 """

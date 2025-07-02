@@ -4,8 +4,11 @@ https://github.com/ildoonet/pytorch-randaugment/blob/master/RandAugment/augmenta
 
 import random
 
-import PIL, PIL.ImageOps, PIL.ImageEnhance, PIL.ImageDraw
 import numpy as np
+import PIL
+import PIL.ImageDraw
+import PIL.ImageEnhance
+import PIL.ImageOps
 import torch
 from PIL import Image
 
