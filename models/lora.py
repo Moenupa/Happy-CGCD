@@ -25,12 +25,12 @@ class Linear(nn.Module):
     ):
         super().__init__()
 
+        # default to require_grad=True, as in nn.Linear
+        # lora ver will set this to false in init_lora
         self.weight = nn.Parameter(torch.empty((out_features, in_features)))
-        self.weight.requires_grad = False
 
         if bias:
             self.bias = nn.Parameter(torch.empty(out_features))
-            self.bias.requires_grad = False
         else:
             self.bias = None
 
@@ -51,6 +51,13 @@ class Linear(nn.Module):
         """
         if r > 0:
             self.scaling = 1.0 if alpha is None else alpha / r
+
+            # disable grad for nn.Linear
+            self.weight.requires_grad_(False)
+            if self.bias is not None:
+                self.bias.requires_grad_(False)
+
+            # default grad=True for LoRA BA
             self.lora_a = nn.Parameter(torch.empty((r, in_features)))
             self.lora_b = nn.Parameter(torch.empty((out_features, r)))
             self.lora_dropout = nn.Dropout(dropout)
