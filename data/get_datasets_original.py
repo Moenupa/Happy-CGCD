@@ -18,8 +18,7 @@ from data.imagenet import subsample_classes as subsample_dataset_imagenet
 from data.stanford_cars import get_scars_datasets
 from data.stanford_cars import subsample_classes as subsample_dataset_scars
 from data.tiny_imagenet import get_tiny_imagenet_datasets
-from data.tiny_imagenet import \
-    subsample_classes as subsample_dataset_tiny_imagenet
+from data.tiny_imagenet import subsample_classes as subsample_dataset_tiny_imagenet
 
 sub_sample_class_funcs = {
     "cifar10": subsample_dataset_cifar,

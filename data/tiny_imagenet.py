@@ -6,8 +6,12 @@ import numpy as np
 import pandas as pd
 from torchvision.datasets import ImageFolder, VisionDataset
 from torchvision.datasets.folder import default_loader
-from torchvision.datasets.utils import (check_integrity, download_url,
-                                        extract_archive, verify_str_arg)
+from torchvision.datasets.utils import (
+    check_integrity,
+    download_url,
+    extract_archive,
+    verify_str_arg,
+)
 
 from config import tiny_imagenet_root
 from data.data_utils import subsample_instances
