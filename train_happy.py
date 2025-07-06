@@ -15,12 +15,20 @@ from tqdm import tqdm
 
 from config import dino_pretrain_path, exp_root_happy
 from data.augmentations import get_transform
-from data.get_datasets import (ContrastiveLearningViewGenerator,
-                               get_class_splits, get_datasets)
+from data.get_datasets import (
+    ContrastiveLearningViewGenerator,
+    get_class_splits,
+    get_datasets,
+)
 from models import vision_transformer as vits
 from models.utils_proto_aug import ProtoAugManager
-from models.utils_simgcd import (DINOHead, DistillLoss, SupConLoss,
-                                 get_params_groups, info_nce_logits)
+from models.utils_simgcd import (
+    DINOHead,
+    DistillLoss,
+    SupConLoss,
+    get_params_groups,
+    info_nce_logits,
+)
 from models.utils_simgcd_pro import get_kmeans_centroid_for_new_head
 from project_utils.cluster_and_log_utils import log_accs_from_preds
 from project_utils.general_utils import AverageMeter, init_experiment, set_seed
@@ -632,6 +640,9 @@ if __name__ == "__main__":
     # others
     parser.add_argument("--print_freq", default=10, type=int)
     parser.add_argument("--exp_name", default="simgcd-pro-v5", type=str)
+    parser.add_argument(
+        "--lora", default=None, type=str, help="LoRA method, lora, svft"
+    )
 
     # ----------------------
     # INIT
@@ -686,11 +697,24 @@ if __name__ == "__main__":
     args.interpolation = 3
     args.crop_pct = 0.875
 
+    # replace backbone with other
+    if args.lora is None:
+        # a regular nn.Linear ViT
+        from models import vision_transformer as vits
+    elif args.lora == "lora":
+        from models import lora_vision_transformer as vits
+
+        print("lora activated")
+    elif args.lora == "svft":
+        from models import svft_vision_transformer as vits
+
+        print("svft activated")
+
     backbone = vits.__dict__["vit_base"]()
 
     args.logger.info(f"Loading weights from {dino_pretrain_path}")
     state_dict = torch.load(dino_pretrain_path, map_location="cpu")
-    backbone.load_state_dict(state_dict)
+    backbone.load_state_dict(state_dict, strict=False)
 
     # NOTE: Hardcoded image size as we do not finetune the entire ViT model
     args.image_size = 224
@@ -709,7 +733,23 @@ if __name__ == "__main__":
         if "block" in name:
             block_num = int(name.split(".")[1])
             if block_num >= args.grad_from_block:
-                m.requires_grad = True
+                if args.lora is None:
+                    # use nn.Linear, nothing special
+                    m.requires_grad = True
+                elif args.lora == "lora":
+                    # use lora.Linear, set grad=true when lora is not present.
+                    if name.endswith("weight") or name.endswith("bias"):
+                        # search for lora alternative in param name dict
+                        lora_alt = ".".join(name.split(".")[:-1]) + ".lora_a"
+                        # lora not present, then m.grad=True
+                        if not any(
+                            lora_alt == n for n, _ in backbone.named_parameters()
+                        ):
+                            m.requires_grad = True
+
+    args.logger.info("parameter requires_grad listing")
+    for name, m in backbone.named_parameters():
+        args.logger.info(f"{name} {m.requires_grad}")
 
     args.logger.info("model build")
 
@@ -959,7 +999,7 @@ if __name__ == "__main__":
                         "loading offline checkpoints from: " + load_dir_online
                     )
                     load_dict = torch.load(load_dir_online)
-                    model_pre.load_state_dict(load_dict["model"])
+                    model_pre.load_state_dict(load_dict["model"], strict=False)
                     args.logger.info("successfully loaded checkpoints!")
             else:  # session > 0:
                 projector_pre = DINOHead(
@@ -975,7 +1015,7 @@ if __name__ == "__main__":
                     "loading checkpoints from last online session: " + load_dir_online
                 )
                 load_dict = torch.load(load_dir_online)
-                model_pre.load_state_dict(load_dict["model"])
+                model_pre.load_state_dict(load_dict["model"], strict=False)
                 args.logger.info("successfully loaded checkpoints!")
             ####################################################################################################################
 
@@ -983,7 +1023,9 @@ if __name__ == "__main__":
             ####################################################################################################################
             ####################################################################################################################
             backbone_cur = deepcopy(backbone)  # NOTE!!!
-            backbone_cur.load_state_dict(model_pre[0].state_dict())  # NOTE!!!
+            backbone_cur.load_state_dict(
+                model_pre[0].state_dict(), strict=False
+            )  # NOTE!!!
             args.mlp_out_dim_cur = (
                 args.num_labeled_classes + args.num_cur_novel_classes
             )  # total num of classes in the current session
@@ -1126,7 +1168,7 @@ if __name__ == "__main__":
                 + load_dir_online_best
             )
             load_dict = torch.load(load_dir_online_best)
-            model_cur.load_state_dict(load_dict["model"])
+            model_cur.load_state_dict(load_dict["model"], strict=False)
             proto_aug_manager.update_prototypes_online(
                 model_cur,
                 online_session_train_loader_for_new_head_init,

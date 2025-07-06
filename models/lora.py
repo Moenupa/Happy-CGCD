@@ -19,7 +19,7 @@ class Linear(nn.Module):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        lora_rank: int = 0,
+        lora_rank: int = 8,
         lora_alpha: int = None,
         lora_dropout: float = 0.0,
     ):
