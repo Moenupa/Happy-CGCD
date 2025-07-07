@@ -733,30 +733,26 @@ if __name__ == "__main__":
         if "block" in name:
             block_num = int(name.split(".")[1])
             if block_num >= args.grad_from_block:
-                # full param finetune
-                if args.lora is None:
-                    m.requires_grad = True
+                m.requires_grad = True
 
-                # special handling for lora
-                elif args.lora == "lora":
-                    # bias is always on
-                    if name.endswith(".bias"):
-                        m.requires_grad = True
+    for name, m in backbone.named_modules():
+        if "." not in name:
+            continue
 
-                    # use lora.Linear, set grad=true only when lora is NOT present.
-                    elif name.endswith(".weight"):
-                        # search for lora alternative in param name dict
-                        lora_alt = ".".join(name.split(".")[:-1]) + ".lora_a"
-                        # lora not present, then m.grad=True
-                        if not any(
-                            lora_alt == n for n, _ in backbone.named_parameters()
-                        ):
-                            m.requires_grad = True
-                        # lora present then
+        if "block" in name:
+            block_num = int(name.split(".")[1])
+            if block_num < args.grad_from_block:
+                continue
 
-                    # anything else req grad, including not nn.Linear, lora_a/b
-                    else:
-                        m.requires_grad = True
+        # a special module-level fix for grad updates
+        # only enabled on LoRA modules, incl. lora.Linear and svft.Linear
+        if hasattr(m, "lazy_init"):
+            m.lazy_init(
+                mask_pattern="banded", off_diag=3, rank=10, fill_orthonormal=True
+            )
+
+        if hasattr(m, "fix_grad"):
+            m.fix_grad(bias_grad=True)
 
     args.logger.info("parameter requires_grad listing")
     for name, m in backbone.named_parameters():
