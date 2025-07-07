@@ -160,7 +160,7 @@ class Linear(nn.Module):
 
         self.register_buffer("_decomposed", torch.tensor(False))
 
-    def lazy_init_svft(
+    def lazy_init(
         self,
         mask_pattern: Literal["banded", "random", "top_k"] = "banded",
         off_diag: int = 1,
@@ -168,7 +168,7 @@ class Linear(nn.Module):
         fill_orthonormal: bool = False,
     ):
         """Activate SVFT with SVD decomposition.
-        Replaces $W$ with $U (\Sigma + M) V^T$ in `forward()` and sets `_decomposed` flag to True.
+        Replaces $W$ with $U (Σ + M) V^T$ in `forward()` and sets `_decomposed` flag to True.
         """
         # if already decomposed, do nothing
         if self._decomposed.item():
