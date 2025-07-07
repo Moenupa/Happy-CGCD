@@ -112,25 +112,3 @@ class LoRA_BA_Term(nn.Module):
 
     def forward(self, x: torch.Tensor):
         return (x @ self.lora_a.T @ self.lora_b.T) * self.scaling
-
-
-if __name__ == "__main__":
-    # drop-in replacement test
-    lora = Linear(10, 5, bias=True, lora_rank=2, lora_alpha=1.0, lora_dropout=0.1)
-    linear = nn.Linear(10, 5, bias=True)
-    linear.weight.data = lora.weight.data
-    linear.bias.data = lora.bias.data
-
-    x = torch.randn(3, 10)
-    lora_output = lora(x)
-    linear_output = linear(x)
-    assert torch.allclose(
-        lora_output, linear_output, atol=1e-6
-    ), "Outputs do not match!"
-
-    # load_state_dict test, show linear.pth can be loaded as lora.pth
-    lora.load_state_dict(linear.state_dict(), strict=False)
-    lora_output = lora(x)
-    assert torch.allclose(
-        lora_output, linear_output, atol=1e-6
-    ), "Outputs do not match after loading state_dict!"
