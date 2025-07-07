@@ -733,12 +733,18 @@ if __name__ == "__main__":
         if "block" in name:
             block_num = int(name.split(".")[1])
             if block_num >= args.grad_from_block:
+                # full param finetune
                 if args.lora is None:
-                    # use nn.Linear, nothing special
                     m.requires_grad = True
+
+                # special handling for lora
                 elif args.lora == "lora":
-                    # use lora.Linear, set grad=true when lora is not present.
-                    if name.endswith("weight") or name.endswith("bias"):
+                    # bias is always on
+                    if name.endswith(".bias"):
+                        m.requires_grad = True
+
+                    # use lora.Linear, set grad=true only when lora is NOT present.
+                    elif name.endswith(".weight"):
                         # search for lora alternative in param name dict
                         lora_alt = ".".join(name.split(".")[:-1]) + ".lora_a"
                         # lora not present, then m.grad=True
@@ -746,6 +752,11 @@ if __name__ == "__main__":
                             lora_alt == n for n, _ in backbone.named_parameters()
                         ):
                             m.requires_grad = True
+                        # lora present then
+
+                    # anything else req grad, including not nn.Linear, lora_a/b
+                    else:
+                        m.requires_grad = True
 
     args.logger.info("parameter requires_grad listing")
     for name, m in backbone.named_parameters():
