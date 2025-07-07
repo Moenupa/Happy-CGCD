@@ -34,7 +34,6 @@ class Linear(nn.Module):
         else:
             self.bias = None
 
-        self.lora_rank = lora_rank
         self.init_lora(in_features, out_features, lora_rank, lora_alpha, lora_dropout)
 
     def init_lora(
@@ -49,13 +48,9 @@ class Linear(nn.Module):
         Initialize LoRA parameters.
         This method can be called to reinitialize LoRA parameters if needed.
         """
+        self.lora_rank = r
         if r > 0:
             self.scaling = 1.0 if alpha is None else alpha / r
-
-            # disable grad for nn.Linear
-            self.weight.requires_grad_(False)
-            if self.bias is not None:
-                self.bias.requires_grad_(False)
 
             # default grad=True for LoRA BA
             self.lora_a = nn.Parameter(torch.empty((r, in_features)))
@@ -69,6 +64,7 @@ class Linear(nn.Module):
             self.register_parameter("lora_a", None)
             self.register_parameter("lora_b", None)
             self.lora_dropout = nn.Identity()
+        self.fix_grad()
 
     def forward(self, x: torch.Tensor):
         result = nn.functional.linear(x, self.weight, bias=self.bias)
@@ -78,38 +74,22 @@ class Linear(nn.Module):
             ) * self.scaling
         return result
 
-    # def load_state_dict(self, state_dict: dict, strict: bool = True):
-    #     # Filter out unexpected LoRA keys (if loading from nn.Linear)
-    #     own_state = self.state_dict()
-    #     missing_keys = []
-    #     unexpected_keys = []
+    def fix_grad(self, bias_grad: bool = False, *_):
+        """Fix the gradient of the weight matrix to False."""
+        if self.lora_rank > 0:
+            self.weight.requires_grad_(False)
+            if self.bias is not None:
+                self.bias.requires_grad_(bias_grad)
+            self.lora_a.requires_grad_(True)
+            self.lora_b.requires_grad_(True)
+        else:
+            # raise RuntimeError("LoRA not initialized. Call init_lora() first.")
 
-    #     for name, param in state_dict.items():
-    #         if name in own_state:
-    #             try:
-    #                 own_state[name].copy_(param)
-    #             except Exception as e:
-    #                 raise RuntimeError(
-    #                     f"While copying the parameter named {name}, "
-    #                     f"whose dimensions in the model are {own_state[name].size()} and "
-    #                     f"whose dimensions in the checkpoint are {param.size()}, "
-    #                     f"an exception occurred: {e}"
-    #                 )
-    #         else:
-    #             if strict:
-    #                 unexpected_keys.append(name)
-
-    #     if strict:
-    #         for name in own_state:
-    #             if name not in state_dict:
-    #                 missing_keys.append(name)
-
-    #         if unexpected_keys or missing_keys:
-    #             raise RuntimeError(
-    #                 f"Error(s) in loading state_dict for {self.__class__.__name__}:\n"
-    #                 f"Missing keys: {missing_keys}\n"
-    #                 f"Unexpected keys: {unexpected_keys}"
-    #             )
+            # fallback to nn.Linear
+            self.weight.requires_grad_(True)
+            if self.bias is not None:
+                self.bias.requires_grad_(True)
+            # lora_a and lora_b are None, so no need to set requires_grad
 
 
 class LoRA_BA_Term(nn.Module):
