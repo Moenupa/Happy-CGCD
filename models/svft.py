@@ -1,8 +1,9 @@
+from typing import Literal
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_sparse import SparseTensor
-from typing import Literal
 
 
 class SVFTLayer(nn.Module):
@@ -213,7 +214,7 @@ class Linear(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # treat as nn.Linear
         if self.svft_ptr is None:
-            return nn.functional.linear(x, self.weight, bias=self.bias)
+            return F.linear(x, self.weight, bias=self.bias)
 
         # otherwise, use SVFT, which is U (Σ + M) V^T x
         svft_layer = self.svft_layers[self.svft_ptr]
