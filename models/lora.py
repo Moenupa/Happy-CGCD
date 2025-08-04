@@ -1,7 +1,8 @@
+import sys
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import sys
 
 # defaults for LoRA
 _DEFAULT_LORA_RANK = 64
@@ -67,6 +68,21 @@ class Linear(nn.Module):
         )
 
         self.lora_layers.add_module(layer_id, lora_term)
+
+        # fix gradients for training:
+        # disable all other lora
+        # enable this new one
+        self.fix_grad(train=True, bias_grad=True)
+        lora_term.fix_grad(train=True)
+
+    def train(self, mode: bool = True):
+        """
+        Override train mode to set all LoRA layers to train mode.
+        """
+        super().train(mode)
+        for m in self.lora_layers.children():
+            m: LoRA_BA_Term
+            m.train(mode)
 
     def fix_grad(self, train: bool = True, bias_grad: bool = False, **_):
         self.weight.requires_grad_(False)
@@ -165,6 +181,13 @@ class LoRA_BA_Term(nn.Module):
         with torch.no_grad():
             nn.init.kaiming_uniform_(self.a, a=5**0.5)
             nn.init.zeros_(self.b)
+
+    def train(self, mode: bool = True):
+        """
+        Override train mode to set dropout to train mode.
+        """
+        super().train(mode)
+        self.dropout.train(mode)
 
     def fix_grad(self, train: bool = True, **_):
         self.a.requires_grad_(train)
