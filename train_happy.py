@@ -643,6 +643,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lora", default=None, type=str, help="LoRA method, lora, svft"
     )
+    parser.add_argument("--lora_experts", default=None, type=int)
+    parser.add_argument("--lora_rank", default=128, type=int)
 
     # ----------------------
     # INIT
@@ -698,6 +700,10 @@ if __name__ == "__main__":
     args.crop_pct = 0.875
 
     # replace backbone with other
+    # lora rank -> off_diag for svft, somehow equivalent
+    svft_kwargs = dict(
+        mask_pattern="top_k", off_diag=args.lora_rank, rank=None, fill_orthonormal=True
+    )
     if args.lora is None:
         # a regular nn.Linear ViT
         from models import vision_transformer as vits
@@ -708,9 +714,9 @@ if __name__ == "__main__":
     elif args.lora == "svft":
         from models import svft_vision_transformer as vits
 
-        print("svft activated")
+        print("svft activated, with kwargs:", svft_kwargs)
 
-    backbone = vits.__dict__["vit_base"]()
+    backbone = vits.vit_base()
 
     args.logger.info(f"Loading weights from {dino_pretrain_path}")
     state_dict = torch.load(dino_pretrain_path, map_location="cpu")
@@ -734,29 +740,6 @@ if __name__ == "__main__":
             block_num = int(name.split(".")[1])
             if block_num >= args.grad_from_block:
                 m.requires_grad = True
-
-    for name, m in backbone.named_modules():
-        if "." not in name:
-            continue
-
-        if "block" in name:
-            block_num = int(name.split(".")[1])
-            if block_num < args.grad_from_block:
-                continue
-
-        # a special module-level fix for grad updates
-        # only enabled on LoRA modules, incl. lora.Linear and svft.Linear
-        if hasattr(m, "lazy_init"):
-            m.lazy_init(
-                mask_pattern="banded", off_diag=3, rank=10, fill_orthonormal=True
-            )
-
-        if hasattr(m, "fix_grad"):
-            m.fix_grad(bias_grad=True)
-
-    args.logger.info("parameter requires_grad listing")
-    for name, m in backbone.named_parameters():
-        args.logger.info(f"{name} {m.requires_grad}")
 
     args.logger.info("model build")
 
@@ -898,11 +881,34 @@ if __name__ == "__main__":
         """Continual GCD sessions"""
         # for session in range(args.continual_session_num):
         for session in range(start_session, args.continual_session_num):
+            # building LoRA
+            if args.lora is not None:
+                for name, m in backbone.named_modules():
+                    if "." not in name:
+                        continue
+                    if "block" in name:
+                        block_num = int(name.split(".")[1])
+                        if block_num < args.grad_from_block:
+                            continue
+
+                    # a special module-level fix for grad updates
+                    # only enabled on LoRA modules, incl. lora.Linear and svft.Linear
+                    if hasattr(m, "init_svft"):
+                        m.init_svft(session, **svft_kwargs)
+                    if hasattr(m, "init_lora"):
+                        m.init_lora(args.lora_experts or session, r=args.lora_rank)
+                    if hasattr(m, "fix_grad"):
+                        m.fix_grad(train=True, bias_grad=True)
+
             args.logger.info(
                 "\n\n========== begin online continual session-{} ===============".format(
                     session + 1
                 )
             )
+            args.logger.info("parameter requires_grad listing")
+            for name, m in backbone.named_parameters():
+                args.logger.info(f"{name} {m.requires_grad}")
+
             # dataset for the current session
             online_session_train_dataset = online_session_train_dataset_list[session]
             online_session_test_dataset = online_session_test_dataset_list[session]
@@ -969,20 +975,6 @@ if __name__ == "__main__":
                     args.num_cur_novel_classes
                 )
             )
-
-            """tunable params in backbone"""
-            ####################################################################################################################
-            # freeze backbone params
-            for m in backbone.parameters():
-                m.requires_grad = False
-
-            # Only finetune layers from block 'args.grad_from_block' onwards
-            for name, m in backbone.named_parameters():
-                if "block" in name:
-                    block_num = int(name.split(".")[1])
-                    if block_num >= args.grad_from_block:
-                        m.requires_grad = True
-            ####################################################################################################################
 
             """load ckpts from last session (session>0) or offline session (session=0)"""
             ####################################################################################################################

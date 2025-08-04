@@ -129,6 +129,14 @@ class SVFTLayer(nn.Module):
         weight = weight @ self.u.T
         return weight
 
+    def fix_grad(self, train: bool = True, **_):
+        self.u.requires_grad_(False)
+        self.v.requires_grad_(False)
+        self.s_pre.requires_grad_(False)
+
+        self.s.requires_grad_(train)
+        self.gate.requires_grad_(train)
+
     def merge_and_unload(self):
         return self.get_weights().T.contiguous()
 
@@ -158,25 +166,30 @@ class Linear(nn.Module):
         else:
             self.bias = None
 
-        self.register_buffer("_decomposed", torch.tensor(False))
+        self.svft_layers = nn.ModuleDict()
+        self.svft_ptr = None
 
-    def lazy_init(
+    def init_svft(
         self,
+        layer_id: int | str,
         mask_pattern: Literal["banded", "random", "top_k"] = "banded",
         off_diag: int = 1,
         rank: int = None,
         fill_orthonormal: bool = False,
     ):
         """Activate SVFT with SVD decomposition.
-        Replaces $W$ with $U (Σ + M) V^T$ in `forward()` and sets `_decomposed` flag to True.
+        Replaces $W$ with $U (Σ + M) V^T$ in `forward()` and sets `svft_ptr` is not None.
         """
         # if already decomposed, do nothing
-        if self._decomposed.item():
+        layer_id = f"{layer_id}"
+        if layer_id in self.svft_layers.keys():
             return
+
+        assert off_diag > 0
 
         # run SVD on weight matrix
         u, s, v = torch.linalg.svd(self.weight.data, full_matrices=False)
-        self.svft_layer = SVFTLayer(
+        svft_layer = SVFTLayer(
             u=u,
             s=s,
             v=v,
@@ -185,33 +198,25 @@ class Linear(nn.Module):
             rank=rank,
             fill_orthonormal=fill_orthonormal,
         )
-        self._decomposed.fill_(True)
-        self.fix_grad()
 
-    def fix_grad(self, bias_grad: bool = False, *_):
+        self.svft_layers.add_module(layer_id, svft_layer)
+        self.svft_ptr = layer_id
+
+    def fix_grad(self, train: bool = True, bias_grad: bool = False, **_):
         """Fix the gradient of the weight matrix to False."""
-        if self._decomposed.item():
-            self.weight.requires_grad_(False)
-            self.bias.requires_grad_(bias_grad)
-
-            self.svft_layer.u.requires_grad_(False)
-            self.svft_layer.v.requires_grad_(False)
-            self.svft_layer.s_pre.requires_grad_(False)
-
-            # only M is trainable
-            self.svft_layer.s.requires_grad_(True)
-        else:
-            raise RuntimeError("SVFT not initialized. Call lazy_init_svft() first.")
+        self.weight.requires_grad_(False)
+        self.bias.requires_grad_(train and bias_grad)
+        for m in self.svft_layers.children():
+            m: SVFTLayer
+            m.fix_grad(train)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # treat as nn.Linear
-        if not self._decomposed.item():
+        if self.svft_ptr is None:
             return nn.functional.linear(x, self.weight, bias=self.bias)
 
         # otherwise, use SVFT, which is U (Σ + M) V^T x
+        svft_layer = self.svft_layers[self.svft_ptr]
         if self.bias is None:
-            return self.svft_layer(x)
-        return self.svft_layer(x) + self.bias
-
-    def merge_and_unload(self):
-        return self.svft_layer.merge_and_unload()
+            return svft_layer(x)
+        return svft_layer(x) + self.bias

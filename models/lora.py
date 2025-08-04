@@ -1,17 +1,19 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import sys
+
+# defaults for LoRA
+_DEFAULT_LORA_RANK = 64
+_DEFAULT_LORA_ALPHA = None
+_DEFAULT_LORA_DROPOUT = 0.0
 
 
 class Linear(nn.Module):
     """
     A drop-in replacement for nn.Linear with extra support for LoRA (Low-Rank Adaptation).
-    This layer can be used in both training and evaluation modes, with or without LoRA.
-    It supports an optional bias term and allows for LoRA to be enabled or disabled.
 
-    Parameters
-    ----------
-    lora_rank : int, optional
-        The rank of the LoRA decomposition. If > 0, LoRA is enabled.
+    LoRA is **lazy**, call `init_lora()` to enable, otherwise it is same as `nn.Linear`.
     """
 
     def __init__(
@@ -19,14 +21,10 @@ class Linear(nn.Module):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        lora_rank: int = 8,
-        lora_alpha: int = None,
-        lora_dropout: float = 0.0,
     ):
         super().__init__()
 
         # default to require_grad=True, as in nn.Linear
-        # lora ver will set this to false in init_lora
         self.weight = nn.Parameter(torch.empty((out_features, in_features)))
 
         if bias:
@@ -34,81 +32,144 @@ class Linear(nn.Module):
         else:
             self.bias = None
 
-        self.init_lora(in_features, out_features, lora_rank, lora_alpha, lora_dropout)
+        # an ordered dict of LoRA layers, FIFO
+        self.lora_layers = nn.ParameterDict()
 
     def init_lora(
         self,
-        in_features: int,
-        out_features: int,
-        r: int,
-        alpha: float = None,
-        dropout: float = 0.0,
+        layer_id: int | str,
+        r: int = _DEFAULT_LORA_RANK,
+        alpha: float = _DEFAULT_LORA_ALPHA,
+        dropout: float = _DEFAULT_LORA_DROPOUT,
     ):
         """
-        Initialize LoRA parameters.
+        Initialize one layer of LoRA parameters.
         This method can be called to reinitialize LoRA parameters if needed.
         """
-        self.lora_rank = r
-        if r > 0:
-            self.scaling = 1.0 if alpha is None else alpha / r
+        layer_id = f"{layer_id}"
 
-            # default grad=True for LoRA BA
-            self.lora_a = nn.Parameter(torch.empty((r, in_features)))
-            self.lora_b = nn.Parameter(torch.empty((out_features, r)))
-            self.lora_dropout = nn.Dropout(dropout)
-            with torch.no_grad():
-                nn.init.kaiming_uniform_(self.lora_a, a=5**0.5)
-                nn.init.zeros_(self.lora_b)
+        if layer_id in self.lora_layers.keys():
+            # if exists, skip re-init, print to stderr
+            print(
+                f"WARN: LoRA layer {layer_id} exists {self.lora_layers.keys()}, skip re-init.",
+                file=sys.stderr,
+            )
+            return
+        assert r > 0, f"LoRA rank {r} must be > 0"
+
+        out_features, in_features = self.weight.shape
+        lora_term = LoRA_BA_Term(
+            in_features=in_features,
+            out_features=out_features,
+            r=r,
+            alpha=alpha,
+            dropout=dropout,
+        )
+
+        self.lora_layers.add_module(layer_id, lora_term)
+
+    def fix_grad(self, train: bool = True, bias_grad: bool = False, **_):
+        self.weight.requires_grad_(False)
+        self.bias.requires_grad_(train and bias_grad)
+        for m in self.lora_layers.children():
+            m: LoRA_BA_Term
+            m.fix_grad(train)
+
+    def merge_lora(self, layer_id: int | str):
+        layer_id = f"{layer_id}"
+        assert layer_id in self.lora_layers
+
+        # merges lora to nn.linear
+        lora_layer: LoRA_BA_Term = self.lora_layers[layer_id]
+        if lora_layer.r == 0:
+            return
+
+        # merge the LoRA parameters into the main weight
+        with torch.no_grad():
+            self.weight += lora_layer.a @ lora_layer.b.T * lora_layer.scaling
+
+        # remove the LoRA layer
+        del self.lora_layers[layer_id]
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        lora_weights: torch.Tensor = None,
+    ) -> torch.Tensor:
+        r"""
+        Forward pass for the linear layer with optional LoRA weights.
+
+        Output a weighted sum of the main linear layer and all LoRA layers.
+        $W(x) + \sum{} \text{lora\_weights}_i \cdot \text{lora\_layers}_i(x)$
+        LoRA layers are ordered FIFO.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+        lora_weights : torch.Tensor, optional
+            Weights for LoRA, numel==n.lora_layers, by default 1:..:1.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor.
+        """
+        # computes a weighted sum of all LoRA layers
+        # default linear:lora1:...:loraN = 1:1:...:1
+
+        # same as nn.Linear
+        result = F.linear(x, self.weight, bias=self.bias)
+        if len(self.lora_layers) == 0:
+            return result
+
+        # computes lora layers, ensure n.weights == n.lora.layers
+        if lora_weights is None:
+            lora_weights = torch.ones(len(self.lora_layers), device=x.device)
         else:
-            self.scaling = None
-            self.register_parameter("lora_a", None)
-            self.register_parameter("lora_b", None)
-            self.lora_dropout = nn.Identity()
-        self.fix_grad()
+            assert lora_weights.numel() == len(self.lora_layers)
+            lora_weights = lora_weights.flatten()
 
-    def forward(self, x: torch.Tensor):
-        result = nn.functional.linear(x, self.weight, bias=self.bias)
-        if self.lora_rank > 0:
-            result += (
-                self.lora_dropout(x) @ self.lora_a.T @ self.lora_b.T
-            ) * self.scaling
+        # weighted sum
+        for i, lora_layer in enumerate(self.lora_layers.values()):
+            lora_layer: LoRA_BA_Term
+            result += lora_weights[i] * lora_layer(x)
+
         return result
-
-    def fix_grad(self, bias_grad: bool = False, *_):
-        """Fix the gradient of the weight matrix to False."""
-        if self.lora_rank > 0:
-            self.weight.requires_grad_(False)
-            if self.bias is not None:
-                self.bias.requires_grad_(bias_grad)
-            self.lora_a.requires_grad_(True)
-            self.lora_b.requires_grad_(True)
-        else:
-            # raise RuntimeError("LoRA not initialized. Call init_lora() first.")
-
-            # fallback to nn.Linear
-            self.weight.requires_grad_(True)
-            if self.bias is not None:
-                self.bias.requires_grad_(True)
-            # lora_a and lora_b are None, so no need to set requires_grad
 
 
 class LoRA_BA_Term(nn.Module):
     """
-    A linear layer that implements the LoRA (Low-Rank Adaptation) technique. Only includes the addition term, i.e. BA, without W.
+    A linear layer that implements the LoRA (Low-Rank Adaptation) technique. \n
+    Only includes the addition term, i.e. BA, without W.
     """
 
     def __init__(
-        self, in_features: int, out_features: int, r: int, alpha: float = None
+        self,
+        in_features: int,
+        out_features: int,
+        r: int = _DEFAULT_LORA_RANK,
+        alpha: float = _DEFAULT_LORA_ALPHA,
+        dropout: float = _DEFAULT_LORA_DROPOUT,
     ):
         super().__init__()
-        self.lora_a = nn.Parameter(torch.empty((r, in_features)))
-        self.lora_b = nn.Parameter(torch.empty((out_features, r)))
-
-        with torch.no_grad():
-            nn.init.kaiming_uniform_(self.lora_a, a=5**0.5)
-            nn.init.zeros_(self.lora_b)
-
+        self.r = r
         self.scaling = 1.0 if alpha is None else alpha / r
 
-    def forward(self, x: torch.Tensor):
-        return (x @ self.lora_a.T @ self.lora_b.T) * self.scaling
+        # $\Delta W=BA$, dropout
+        self.a = nn.Parameter(torch.empty((r, in_features)), requires_grad=True)
+        self.b = nn.Parameter(torch.empty((out_features, r)), requires_grad=True)
+        self.dropout = nn.Dropout(dropout)
+
+        # init params
+        with torch.no_grad():
+            nn.init.kaiming_uniform_(self.a, a=5**0.5)
+            nn.init.zeros_(self.b)
+
+    def fix_grad(self, train: bool = True, **_):
+        self.a.requires_grad_(train)
+        self.b.requires_grad_(train)
+        self.dropout.train(train)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (self.dropout(x) @ self.a.T @ self.b.T) * self.scaling
