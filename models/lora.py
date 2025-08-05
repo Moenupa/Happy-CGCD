@@ -33,12 +33,14 @@ class Linear(nn.Module):
         else:
             self.bias = None
 
-        # an ordered dict of LoRA layers, FIFO
+        # LoRA layers; and its weights (1.0 if not specified)
         self.lora_layers = nn.ParameterDict()
+        self.lora_weights: dict[str, float] = {}
 
     def init_lora(
         self,
         layer_id: int | str,
+        layer_weight: int | float = None,
         r: int = _DEFAULT_LORA_RANK,
         alpha: float = _DEFAULT_LORA_ALPHA,
         dropout: float = _DEFAULT_LORA_DROPOUT,
@@ -68,21 +70,15 @@ class Linear(nn.Module):
         )
 
         self.lora_layers.add_module(layer_id, lora_term)
+        if layer_weight is not None:
+            assert isinstance(layer_weight, (int, float))
+            self.lora_weights[layer_id] = layer_weight
 
         # fix gradients for training:
         # disable all other lora
         # enable this new one
         self.fix_grad(train=True, bias_grad=True)
         lora_term.fix_grad(train=True)
-
-    def train(self, mode: bool = True):
-        """
-        Override train mode to set all LoRA layers to train mode.
-        """
-        super().train(mode)
-        for m in self.lora_layers.children():
-            m: LoRA_BA_Term
-            m.train(mode)
 
     def fix_grad(self, train: bool = True, bias_grad: bool = False, **_):
         self.weight.requires_grad_(False)
@@ -110,7 +106,6 @@ class Linear(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        lora_weights: torch.Tensor = None,
     ) -> torch.Tensor:
         r"""
         Forward pass for the linear layer with optional LoRA weights.
@@ -134,22 +129,17 @@ class Linear(nn.Module):
         # computes a weighted sum of all LoRA layers
         # default linear:lora1:...:loraN = 1:1:...:1
 
-        # same as nn.Linear
+        # same as nn.Linear, if no LoRA available
         result = F.linear(x, self.weight, bias=self.bias)
         if len(self.lora_layers) == 0:
             return result
 
-        # computes lora layers, ensure n.weights == n.lora.layers
-        if lora_weights is None:
-            lora_weights = torch.ones(len(self.lora_layers), device=x.device)
-        else:
-            assert lora_weights.numel() == len(self.lora_layers)
-            lora_weights = lora_weights.flatten()
-
-        # weighted sum
-        for i, lora_layer in enumerate(self.lora_layers.values()):
+        # cal weighted sum of all LoRA layers, default weight 1.0
+        for layer_id, lora_layer in self.lora_layers.items():
             lora_layer: LoRA_BA_Term
-            result += lora_weights[i] * lora_layer(x)
+
+            # if no weight specified, use 1.0
+            result += self.lora_weights.get(layer_id, 1.0) * lora_layer(x)
 
         return result
 
@@ -181,13 +171,6 @@ class LoRA_BA_Term(nn.Module):
         with torch.no_grad():
             nn.init.kaiming_uniform_(self.a, a=5**0.5)
             nn.init.zeros_(self.b)
-
-    def train(self, mode: bool = True):
-        """
-        Override train mode to set dropout to train mode.
-        """
-        super().train(mode)
-        self.dropout.train(mode)
 
     def fix_grad(self, train: bool = True, **_):
         self.a.requires_grad_(train)
