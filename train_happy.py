@@ -1,14 +1,12 @@
 import argparse
 import math
 import os
-import time
 import warnings
 from copy import deepcopy
 
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.cluster import KMeans
 from torch.optim import SGD, lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -238,14 +236,32 @@ def test_offline(model, test_loader, epoch, save_name, args):
 
 
 def train_online(
-    student,
-    student_pre,
+    student: nn.Module,
+    student_pre: nn.Module,
     proto_aug_manager,
-    train_loader,
-    test_loader,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
     current_session,
     args,
 ):
+    # EMA helper class
+    class EMA:
+        def __init__(self, model, decay):
+            self.model = deepcopy(model)
+            self.model.eval()
+            self.decay = decay
+            for p in self.model.parameters():
+                p.requires_grad_(False)
+
+        def update(self, model):
+            with torch.no_grad():
+                msd = model.state_dict()
+                for k, v in self.model.state_dict().items():
+                    if k in msd:
+                        v.copy_(v * self.decay + msd[k] * (1.0 - self.decay))
+
+        def to(self, device):
+            self.model.to(device)
 
     params_groups = get_params_groups(student)
     optimizer = SGD(
@@ -254,19 +270,25 @@ def train_online(
         momentum=args.momentum,
         weight_decay=args.weight_decay,
     )
-
     exp_lr_scheduler = lr_scheduler.CosineAnnealingLR(
         optimizer,
         T_max=args.epochs_online_per_session,
         eta_min=args.lr * 1e-3,
     )
-
     cluster_criterion = DistillLoss(
         args.warmup_teacher_temp_epochs,
         args.epochs_online_per_session,
         args.n_views,
         args.warmup_teacher_temp,
         args.teacher_temp,
+    )
+    # EMA model
+    ema_decay = getattr(args, "ema_decay", 0.999)
+    ema_model = EMA(student, ema_decay)
+    ema_model.to(
+        student[0].weight.device
+        if hasattr(student[0], "weight")
+        else next(student.parameters()).device
     )
 
     # best acc log
@@ -299,7 +321,10 @@ def train_online(
             images = torch.cat(images, dim=0).cuda(non_blocking=True)
 
             student_proj, student_out = student(images)
-            teacher_out = student_out.detach()
+            # Use EMA model for teacher_out
+            with torch.no_grad():
+                ema_proj, ema_out = ema_model.model(images)
+            teacher_out = ema_out.detach()
 
             # clustering, unsup
             cluster_loss = cluster_criterion(student_out, teacher_out, epoch)
@@ -384,6 +409,8 @@ def train_online(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            # Update EMA model
+            ema_model.update(student)
 
             if batch_idx % args.print_freq == 0:
                 args.logger.info(
