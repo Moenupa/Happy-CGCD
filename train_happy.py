@@ -250,7 +250,7 @@ def train_online(
 
         def __init__(self, model: nn.Sequential, decay: float = 0.999):
             self.decay = decay
-            self.shadow = nn.ParameterDict()
+            self.shadow = {}
 
             for name, param in model.named_parameters():
                 if param.requires_grad:
