@@ -247,22 +247,27 @@ def train_online(
 ):
     # EMA helper class
     class EMA:
-        def __init__(self, model, decay):
-            self.model = deepcopy(model)
-            self.model.eval()
+
+        def __init__(self, model: nn.Sequential, decay: float = 0.999):
             self.decay = decay
-            for p in self.model.parameters():
-                p.requires_grad_(False)
+            self.shadow = nn.ParameterDict()
 
-        def update(self, model):
-            with torch.no_grad():
-                msd = model.state_dict()
-                for k, v in self.model.state_dict().items():
-                    if k in msd:
-                        v.copy_(v * self.decay + msd[k] * (1.0 - self.decay))
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    self.shadow[name] = param.data.clone()
 
-        def to(self, device):
-            self.model.to(device)
+        def update(self, model: nn.Sequential):
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    new_average = (
+                        1.0 - self.decay
+                    ) * param.data + self.decay * self.shadow[name]
+                    self.shadow[name] = new_average.clone()
+
+        def apply_shadow(self, model: nn.Sequential):
+            for name, param in model.named_parameters():
+                if param.requires_grad:
+                    param.data.copy_(self.shadow[name])
 
     params_groups = get_params_groups(student)
     optimizer = SGD(
@@ -277,17 +282,16 @@ def train_online(
         eta_min=args.lr * 1e-3,
     )
     # DONE: change DistillLoss -> protoGCD's pseudo label DistillLoss_ratio
-    loss_class_ = DistillLoss_ratio
-    if loss_class_ == DistillLoss:
-        cluster_criterion = loss_class_(
+    if args.protoGCD == 0:
+        cluster_criterion = DistillLoss(
             args.warmup_teacher_temp_epochs,
             args.epochs_online_per_session,
             args.n_views,
             args.warmup_teacher_temp,
             args.teacher_temp,
         )
-    elif loss_class_ == DistillLoss_ratio:
-        cluster_criterion = loss_class_(
+    else:
+        cluster_criterion = DistillLoss_ratio(
             nepochs=args.epochs_online_per_session,
             ramp_ratio_teacher_epochs=args.epochs_online_per_session // 2,
             ncrops=args.n_views,
@@ -297,7 +301,6 @@ def train_online(
     # EMA model
     ema_decay = getattr(args, "ema_decay", 0.999)
     ema_model = EMA(student, ema_decay)
-    ema_model.to(next(student.parameters()).device)
 
     # best acc log
     best_test_acc_all = 0
@@ -329,10 +332,7 @@ def train_online(
             images = torch.cat(images, dim=0).cuda(non_blocking=True)
 
             student_proj, student_out = student(images)
-            # Use EMA model for teacher_out
-            with torch.no_grad():
-                ema_proj, ema_out = ema_model.model(images)
-            teacher_out = ema_out.detach()
+            teacher_out = student_out.detach()
 
             # clustering, unsup
             cluster_loss = cluster_criterion(student_out, teacher_out, epoch)
@@ -436,6 +436,9 @@ def train_online(
                 args.logger.info(
                     f"Avg old prob: {torch.sum(avg_probs_old_in).item():.4f} | Avg new prob: {torch.sum(avg_probs_new_in).item():.4f} | Pred new ratio: {new_pred_ratio:.4f} | Ground-truth new ratio: {new_true_ratio:.4f}"
                 )
+
+        # handle ema
+        ema_model.apply_shadow(student)
 
         args.logger.info(
             "Train Epoch: {} Avg Loss: {:.4f} ".format(epoch, loss_record.avg)
@@ -681,6 +684,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--lora_experts", default=None, type=int)
     parser.add_argument("--lora_rank", default=128, type=int)
+    parser.add_argument("--protoGCD", default=0, type=int)
 
     # ----------------------
     # INIT
