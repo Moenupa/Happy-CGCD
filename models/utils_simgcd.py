@@ -187,7 +187,7 @@ def info_nce_logits(features, n_views=2, temperature=1.0, device="cuda"):
     return logits, labels
 
 
-def get_params_groups(model):
+def get_params_groups(model: nn.Sequential):
     regularized = []
     not_regularized = []
     for name, param in model.named_parameters():
@@ -205,12 +205,12 @@ def get_params_groups(model):
 class DistillLoss(nn.Module):
     def __init__(
         self,
-        warmup_teacher_temp_epochs,
-        nepochs,
-        ncrops=2,
-        warmup_teacher_temp=0.07,
-        teacher_temp=0.04,
-        student_temp=0.1,
+        warmup_teacher_temp_epochs: int,
+        nepochs: int,
+        ncrops: int = 2,
+        warmup_teacher_temp: float = 0.07,
+        teacher_temp: float = 0.04,
+        student_temp: float = 0.1,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -251,17 +251,18 @@ class DistillLoss(nn.Module):
 
 
 class DistillLoss_ratio(nn.Module):
+
     def __init__(
         self,
-        num_classes=100,
-        wait_ratio_epochs=0,
-        ramp_ratio_teacher_epochs=100,
-        nepochs=200,
-        ncrops=2,
-        init_ratio=0.0,
-        final_ratio=1.0,
-        temp_logits=0.1,
-        temp_teacher_logits=0.05,
+        num_classes: int = 100,
+        wait_ratio_epochs: int = 0,
+        ramp_ratio_teacher_epochs: int = 100,
+        nepochs: int = 200,
+        ncrops: int = 2,
+        init_ratio: float = 0.0,
+        final_ratio: float = 1.0,
+        temp_logits: float = 0.1,
+        temp_teacher_logits: float = 0.05,
         device="cuda",
     ):
         super().__init__()

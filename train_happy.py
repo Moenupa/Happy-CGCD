@@ -237,9 +237,9 @@ def test_offline(model, test_loader, epoch, save_name, args):
 
 
 def train_online(
-    student: nn.Module,
-    student_pre: nn.Module,
-    proto_aug_manager,
+    student: nn.Sequential,
+    student_pre: nn.Sequential,
+    proto_aug_manager: ProtoAugManager,
     train_loader: DataLoader,
     test_loader: DataLoader,
     current_session,
@@ -277,21 +277,27 @@ def train_online(
         eta_min=args.lr * 1e-3,
     )
     # DONE: change DistillLoss -> protoGCD's pseudo label DistillLoss_ratio
-    cluster_criterion = DistillLoss_ratio(
-        args.warmup_teacher_temp_epochs,
-        args.epochs_online_per_session,
-        args.n_views,
-        args.warmup_teacher_temp,
-        args.teacher_temp,
-    )
+    loss_class_ = DistillLoss_ratio
+    if loss_class_ == DistillLoss:
+        cluster_criterion = loss_class_(
+            args.warmup_teacher_temp_epochs,
+            args.epochs_online_per_session,
+            args.n_views,
+            args.warmup_teacher_temp,
+            args.teacher_temp,
+        )
+    elif loss_class_ == DistillLoss_ratio:
+        cluster_criterion = loss_class_(
+            nepochs=args.epochs_online_per_session,
+            ramp_ratio_teacher_epochs=args.epochs_online_per_session // 2,
+            ncrops=args.n_views,
+        )
+
+    cluster_criterion.to(next(student.parameters()).device)
     # EMA model
     ema_decay = getattr(args, "ema_decay", 0.999)
     ema_model = EMA(student, ema_decay)
-    ema_model.to(
-        student[0].weight.device
-        if hasattr(student[0], "weight")
-        else next(student.parameters()).device
-    )
+    ema_model.to(next(student.parameters()).device)
 
     # best acc log
     best_test_acc_all = 0
