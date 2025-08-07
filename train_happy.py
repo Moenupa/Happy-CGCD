@@ -23,6 +23,7 @@ from models.utils_proto_aug import ProtoAugManager
 from models.utils_simgcd import (
     DINOHead,
     DistillLoss,
+    DistillLoss_ratio,
     SupConLoss,
     get_params_groups,
     info_nce_logits,
@@ -275,7 +276,8 @@ def train_online(
         T_max=args.epochs_online_per_session,
         eta_min=args.lr * 1e-3,
     )
-    cluster_criterion = DistillLoss(
+    # DONE: change DistillLoss -> protoGCD's pseudo label DistillLoss_ratio
+    cluster_criterion = DistillLoss_ratio(
         args.warmup_teacher_temp_epochs,
         args.epochs_online_per_session,
         args.n_views,
@@ -389,6 +391,7 @@ def train_online(
             feat_distill_loss = (feats - feats_pre).pow(2).sum() / len(feats)
 
             # Total loss
+            # TODO: tune weights for loss terms
             loss = 0
             loss += 1 * cluster_loss
             loss += 1 * contrastive_loss
