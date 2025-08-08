@@ -292,6 +292,7 @@ def train_online(
         )
     else:
         cluster_criterion = DistillLoss_ratio(
+            num_classes=args.num_labeled_classes + args.num_cur_novel_classes,
             nepochs=args.epochs_online_per_session,
             ramp_ratio_teacher_epochs=args.epochs_online_per_session // 2,
             ncrops=args.n_views,
