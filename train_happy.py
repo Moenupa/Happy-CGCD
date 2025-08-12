@@ -300,8 +300,7 @@ def train_online(
 
     cluster_criterion.to(next(student.parameters()).device)
     # EMA model
-    ema_decay = getattr(args, "ema_decay", 0.999)
-    ema_model = EMA(student, ema_decay)
+    ema_model = EMA(student, args.ema_decay)
 
     # best acc log
     best_test_acc_all = 0
@@ -686,6 +685,7 @@ if __name__ == "__main__":
     parser.add_argument("--lora_experts", default=None, type=int)
     parser.add_argument("--lora_rank", default=128, type=int)
     parser.add_argument("--protoGCD", default=0, type=int)
+    parser.add_argument("--ema_decay", default=0, type=float)
 
     # ----------------------
     # INIT
