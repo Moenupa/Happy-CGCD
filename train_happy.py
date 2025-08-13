@@ -248,26 +248,33 @@ def train_online(
     # EMA helper class
     class EMA:
 
-        def __init__(self, model: nn.Sequential, decay: float = 0.999):
-            self.decay = decay
-            self.shadow = {}
+        def __init__(
+            self, model: nn.Sequential, theta_new: float = 1.0, theta_old: float = 0.0
+        ):
+            self.theta_new = theta_new
+            self.theta_old = theta_old
+            self.shadow: dict[str, torch.Tensor] = {}
 
             for name, param in model.named_parameters():
-                if param.requires_grad:
-                    self.shadow[name] = param.data.clone()
+                if not param.requires_grad:
+                    continue
+
+                self.shadow[name] = param.data.clone()
 
         def update(self, model: nn.Sequential):
             for name, param in model.named_parameters():
-                if param.requires_grad:
-                    new_average = (
-                        1.0 - self.decay
-                    ) * param.data + self.decay * self.shadow[name]
-                    self.shadow[name] = new_average.clone()
+                if not param.requires_grad:
+                    continue
+
+                ema = self.theta_new * param.data + self.theta_old * self.shadow[name]
+                self.shadow[name] = ema.clone()
 
         def apply_shadow(self, model: nn.Sequential):
             for name, param in model.named_parameters():
-                if param.requires_grad:
-                    param.data.copy_(self.shadow[name])
+                if not param.requires_grad:
+                    continue
+
+                param.data.copy_(self.shadow[name])
 
     params_groups = get_params_groups(student)
     optimizer = SGD(
@@ -300,7 +307,7 @@ def train_online(
 
     cluster_criterion.to(next(student.parameters()).device)
     # EMA model
-    ema_model = EMA(student, args.ema_decay)
+    ema_model = EMA(student, args.ema_new, args.ema_old)
 
     # best acc log
     best_test_acc_all = 0
@@ -396,6 +403,21 @@ def train_online(
                 feats_pre = torch.nn.functional.normalize(feats_pre, dim=-1)
             feat_distill_loss = (feats - feats_pre).pow(2).sum() / len(feats)
 
+            # DONE: L2 loss for old-class classification head
+            # to limit changes for old-class
+            old_head_l2_loss = torch.tensor(0.0, device=feats.device)
+            head_cur = student[1].last_layer
+            head_pre = student_pre[1].last_layer
+            num_seen = int(args.num_seen_classes)
+            tmp_loss = torch.tensor(0.0, device=feats.device)
+            for attr in ["weight", "weight_v", "weight_g"]:
+                if hasattr(head_cur, attr) and hasattr(head_pre, attr):
+                    w_cur = getattr(head_cur, attr)[:num_seen]
+                    w_pre = getattr(head_pre, attr)[:num_seen].detach()
+                    if w_cur.shape == w_pre.shape:
+                        tmp_loss = tmp_loss + nn.functional.mse_loss(w_cur, w_pre)
+            old_head_l2_loss = tmp_loss
+
             # Total loss
             # TODO: tune weights for loss terms
             loss = 0
@@ -403,6 +425,7 @@ def train_online(
             loss += 1 * contrastive_loss
             loss += args.proto_aug_weight * proto_aug_loss
             loss += args.feat_distill_weight * feat_distill_loss
+            loss += args.old_head_l2_weight * old_head_l2_loss
 
             # logs
             pstr = ""
@@ -413,6 +436,7 @@ def train_online(
             pstr += f"contrastive_loss: {contrastive_loss.item():.4f} "
             pstr += f"proto_aug_loss: {proto_aug_loss.item():.4f} "
             pstr += f"feat_distill_loss: {feat_distill_loss.item():.4f} "
+            pstr += f"old_head_l2_loss: {old_head_l2_loss.item():.4f} "
 
             loss_record.update(loss.item(), class_labels.size(0))
             optimizer.zero_grad()
@@ -654,6 +678,7 @@ if __name__ == "__main__":
     parser.add_argument("--proto_aug_weight", type=float, default=1.0)
     parser.add_argument("--feat_distill_weight", type=float, default=1.0)
     parser.add_argument("--radius_scale", type=float, default=1.0)
+    parser.add_argument("--old_head_l2_weight", type=float, default=0.0)
 
     """hardness-aware sampling temperature"""
     parser.add_argument("--hardness_temp", type=float, default=0.1)
@@ -685,7 +710,8 @@ if __name__ == "__main__":
     parser.add_argument("--lora_experts", default=None, type=int)
     parser.add_argument("--lora_rank", default=128, type=int)
     parser.add_argument("--protoGCD", default=0, type=int)
-    parser.add_argument("--ema_decay", default=0, type=float)
+    parser.add_argument("--ema_new", default=1.0, type=float)
+    parser.add_argument("--ema_old", default=0.0, type=float)
 
     # ----------------------
     # INIT
