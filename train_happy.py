@@ -365,12 +365,34 @@ def train_online(
                 feats_pre = torch.nn.functional.normalize(feats_pre, dim=-1)
             feat_distill_loss = (feats - feats_pre).pow(2).sum() / len(feats)
 
+            # L2 loss for old-class head, limits changes for old classes
+            old_head_l2_loss = torch.tensor(0.0, device=feats.device)
+            head_cur = student[1].last_layer
+            head_pre = student_pre[1].last_layer
+            num_seen = int(args.num_seen_classes)
+            tmp_loss = torch.tensor(0.0, device=feats.device)
+            for attr in ["weight", "weight_v", "weight_g"]:
+                assert hasattr(head_cur, attr), f"old head_cur no such {attr}"
+                assert hasattr(head_pre, attr), f"old head_pre no such {attr}"
+                if hasattr(head_cur, attr) and hasattr(head_pre, attr):
+                    w_cur = getattr(head_cur, attr)[:num_seen]
+                    w_pre = getattr(head_pre, attr)[:num_seen].detach()
+                    if w_cur.shape == w_pre.shape:
+                        tmp_loss = tmp_loss + nn.functional.mse_loss(w_cur, w_pre)
+            old_head_l2_loss = tmp_loss
+
+            loss_arr = torch.stack(
+                [
+                    1 * cluster_loss,
+                    1 * contrastive_loss,
+                    args.proto_aug_weight * proto_aug_loss,
+                    args.feat_distill_weight * feat_distill_loss,
+                    args.old_head_l2_weight * old_head_l2_loss,
+                ]
+            )
+
             # Total loss
-            loss = 0
-            loss += 1 * cluster_loss
-            loss += 1 * contrastive_loss
-            loss += args.proto_aug_weight * proto_aug_loss
-            loss += args.feat_distill_weight * feat_distill_loss
+            loss = torch.sum(loss_arr, dim=0)
 
             # logs
             pstr = ""
@@ -381,6 +403,7 @@ def train_online(
             pstr += f"contrastive_loss: {contrastive_loss.item():.4f} "
             pstr += f"proto_aug_loss: {proto_aug_loss.item():.4f} "
             pstr += f"feat_distill_loss: {feat_distill_loss.item():.4f} "
+            pstr += f"old_head_l2_loss: {old_head_l2_loss.item():.4f} "
 
             loss_record.update(loss.item(), class_labels.size(0))
             optimizer.zero_grad()
