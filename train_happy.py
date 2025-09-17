@@ -22,6 +22,7 @@ from models.utils_proto_aug import ProtoAugManager
 from models.utils_simgcd import (
     DINOHead,
     DistillLoss,
+    DistillLoss_ratio,
     SupConLoss,
     get_params_groups,
     info_nce_logits,
@@ -253,13 +254,22 @@ def train_online(
         eta_min=args.lr * 1e-3,
     )
 
-    cluster_criterion = DistillLoss(
-        args.warmup_teacher_temp_epochs,
-        args.epochs_online_per_session,
-        args.n_views,
-        args.warmup_teacher_temp,
-        args.teacher_temp,
-    )
+    if args.use_protoGCD:
+        cluster_criterion = DistillLoss_ratio(
+            num_classes=args.num_labeled_classes + args.num_cur_novel_classes,
+            nepochs=args.epochs_online_per_session,
+            ramp_ratio_teacher_epochs=args.warmup_teacher_temp_epochs,
+            ncrops=args.n_views,
+        )
+    else:
+        cluster_criterion = DistillLoss(
+            args.warmup_teacher_temp_epochs,
+            args.epochs_online_per_session,
+            args.n_views,
+            args.warmup_teacher_temp,
+            args.teacher_temp,
+        )
+    cluster_criterion.to(next(student.parameters()).device)
 
     # best acc log
     best_test_acc_all = 0
