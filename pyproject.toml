@@ -10,10 +10,11 @@ dependencies = [
     "pandas>=2.3.1",
     "scikit-learn>=1.7.1",
     "scipy>=1.16.1",
-    "torch>=2.7.1",
+    "torch>=2.8.0,<2.9.0",
     "torchvision>=0.22.1",
     "tqdm>=4.67.1",
     "wandb>=0.21.0",
+    "torch-sparse",
 ]
 
 [tool.uv.sources]
@@ -28,6 +29,20 @@ torchvision = [
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
+
+[[tool.uv.index]]
+name="torch-scatter"
+url="https://data.pyg.org/whl/torch-2.8.0+cu126.html"
+explicit=true
+
+[[tool.uv.index]]
+name="torch-sparse"
+url="https://data.pyg.org/whl/torch-2.8.0+cu126.html"
+explicit=true
+
+[tool.uv.extra-build-dependencies]
+torch-scatter = ["torch"]
+torch-sparse = ["torch"]
 
 [dependency-groups]
 dev = [
