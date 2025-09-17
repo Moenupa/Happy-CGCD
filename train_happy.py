@@ -7,7 +7,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.optim import SGD, lr_scheduler
+from torch.optim import SGD, lr_scheduler, swa_utils
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -254,6 +254,12 @@ def train_online(
         eta_min=args.lr * 1e-3,
     )
 
+    # on top of the normal scheduler, see:
+    # https://docs.pytorch.org/docs/stable/generated/torch.optim.swa_utils.SWALR.html
+    swa_scheduler = swa_utils.SWALR(
+        optimizer=optimizer, anneal_epochs=2, swa_lr=0.5 * args.lr
+    )
+
     if args.use_protoGCD:
         cluster_criterion = DistillLoss_ratio(
             num_classes=args.num_labeled_classes + args.num_cur_novel_classes,
@@ -453,7 +459,10 @@ def train_online(
         )
 
         # Step schedule
-        exp_lr_scheduler.step()
+        if args.use_swa and epoch > 16:
+            swa_scheduler.step()
+        else:
+            exp_lr_scheduler.step()
 
         save_dict = {
             "model": student.state_dict(),
