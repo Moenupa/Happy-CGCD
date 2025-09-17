@@ -23,6 +23,8 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
+from . import lora
+
 # from torch.nn.init import normal_
 
 
@@ -62,9 +64,9 @@ class Mlp(nn.Module):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.fc1 = lora.Linear(in_features, hidden_features)
         self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.fc2 = lora.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
@@ -91,9 +93,9 @@ class Attention(nn.Module):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim**-0.5
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.qkv = lora.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = lora.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x):
@@ -239,7 +241,7 @@ class VisionTransformer(nn.Module):
 
         # Classifier head
         self.head = (
-            nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+            lora.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         )
 
         trunc_normal_(self.pos_embed, std=0.02)
@@ -247,9 +249,9 @@ class VisionTransformer(nn.Module):
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
+        if isinstance(m, lora.Linear):
             trunc_normal_(m.weight, std=0.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
+            if isinstance(m, lora.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
@@ -384,31 +386,31 @@ class DINOHead(nn.Module):
         super().__init__()
         nlayers = max(nlayers, 1)
         if nlayers == 1:
-            self.mlp = nn.Linear(in_dim, bottleneck_dim)
+            self.mlp = lora.Linear(in_dim, bottleneck_dim)
         else:
-            layers = [nn.Linear(in_dim, hidden_dim)]
+            layers = [lora.Linear(in_dim, hidden_dim)]
             if use_bn:
                 layers.append(nn.BatchNorm1d(hidden_dim))
             layers.append(nn.GELU())
             for _ in range(nlayers - 2):
-                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                layers.append(lora.Linear(hidden_dim, hidden_dim))
                 if use_bn:
                     layers.append(nn.BatchNorm1d(hidden_dim))
                 layers.append(nn.GELU())
-            layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+            layers.append(lora.Linear(hidden_dim, bottleneck_dim))
             self.mlp = nn.Sequential(*layers)
         self.apply(self._init_weights)
         self.last_layer = nn.utils.weight_norm(
-            nn.Linear(bottleneck_dim, out_dim, bias=False)
+            lora.Linear(bottleneck_dim, out_dim, bias=False)
         )
         self.last_layer.weight_g.data.fill_(1)
         if norm_last_layer:
             self.last_layer.weight_g.requires_grad = False
 
     def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
+        if isinstance(m, lora.Linear):
             trunc_normal_(m.weight, std=0.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
+            if isinstance(m, lora.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
@@ -419,11 +421,12 @@ class DINOHead(nn.Module):
 
 
 class VisionTransformerWithLinear(nn.Module):
+    # this class is not used.
     def __init__(self, base_vit, num_classes=200):
         super().__init__()
 
         self.base_vit = base_vit
-        self.fc = nn.Linear(768, num_classes)
+        self.fc = lora.Linear(768, num_classes)
 
     def forward(self, x, return_features=False):
         features = self.base_vit(x)
