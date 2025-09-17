@@ -81,7 +81,7 @@ def get_datasets(dataset_name, train_transform, test_transform, args):
         target_transform_dict[cls] = i
 
     def target_transform(x):
-        target_transform_dict[x]
+        return target_transform_dict[x]
 
     for dataset_name, dataset in datasets.items():
         if dataset is not None:
