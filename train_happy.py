@@ -18,7 +18,6 @@ from data.get_datasets import (
     get_class_splits,
     get_datasets,
 )
-from models import vision_transformer as vits
 from models.utils_proto_aug import ProtoAugManager
 from models.utils_simgcd import (
     DINOHead,
@@ -232,12 +231,12 @@ def test_offline(model, test_loader, epoch, save_name, args):
 
 
 def train_online(
-    student,
-    student_pre,
-    proto_aug_manager,
-    train_loader,
-    test_loader,
-    current_session,
+    student: nn.Sequential,
+    student_pre: nn.Sequential,
+    proto_aug_manager: ProtoAugManager,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
+    current_session: int,
     args,
 ):
     params_groups = get_params_groups(student)
@@ -599,7 +598,9 @@ if __name__ == "__main__":
     )
 
     """clustering-guided initialization"""
-    parser.add_argument("--init_new_head", action="store_true", default=False)
+    parser.add_argument(
+        "--init_new_head", action=argparse.BooleanOptionalAction, default=False
+    )
 
     """PASS params"""
     parser.add_argument("--proto_aug_weight", type=float, default=1.0)
@@ -630,6 +631,58 @@ if __name__ == "__main__":
     # others
     parser.add_argument("--print_freq", default=10, type=int)
     parser.add_argument("--exp_name", default="simgcd-pro-v5", type=str)
+
+    # default no LoRA
+    parser.add_argument(
+        "--lora_rank",
+        type=int,
+        default=0,
+        help="rank for lora; if 0, no lora. Arxiv:2106.09685.",
+    )
+
+    # loss modifications, default none
+    parser.add_argument(
+        "--old_head_l2_weight",
+        type=float,
+        default=0.0,
+        help="weight for L2 loss on old classification heads.",
+    )
+    parser.add_argument(
+        "--stch_mu",
+        type=float,
+        default=0.0,
+        help="mu for STCH; if 0, no STCH. Arxiv:2402.19078v3.",
+    )
+    parser.add_argument(
+        "--use_protoGCD",
+        type=bool,
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="whether to use protoGCD loss. Arxiv:2504.03755.",
+    )
+
+    # default no EMA.
+    parser.add_argument(
+        "--ema_new",
+        type=float,
+        default=1.0,
+        help="alpha_old * \\Theta_t-1 + alpha_new * \\Theta_t",
+    )
+    parser.add_argument(
+        "--ema_old",
+        type=float,
+        default=0.0,
+        help="alpha_old * \\Theta_t-1 + alpha_new * \\Theta_t",
+    )
+
+    # default no swa
+    parser.add_argument(
+        "--use_swa",
+        type=bool,
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="whether to use swa. Arxiv:1803.05407.",
+    )
 
     # ----------------------
     # INIT
@@ -684,11 +737,13 @@ if __name__ == "__main__":
     args.interpolation = 3
     args.crop_pct = 0.875
 
-    backbone = vits.__dict__["vit_base"]()
+    from models import vision_transformer as vits
+
+    backbone = vits.vit_base()
 
     args.logger.info(f"Loading weights from {dino_pretrain_path}")
     state_dict = torch.load(dino_pretrain_path, map_location="cpu")
-    backbone.load_state_dict(state_dict)
+    backbone.load_state_dict(state_dict, strict=False)
 
     # NOTE: Hardcoded image size as we do not finetune the entire ViT model
     args.image_size = 224
@@ -854,6 +909,10 @@ if __name__ == "__main__":
                     session + 1
                 )
             )
+            args.logger.info("parameter requires_grad listing")
+            for name, m in backbone.named_parameters():
+                args.logger.info(f"{name} {m.requires_grad}")
+
             # dataset for the current session
             online_session_train_dataset = online_session_train_dataset_list[session]
             online_session_test_dataset = online_session_test_dataset_list[session]
@@ -957,7 +1016,7 @@ if __name__ == "__main__":
                         "loading offline checkpoints from: " + load_dir_online
                     )
                     load_dict = torch.load(load_dir_online)
-                    model_pre.load_state_dict(load_dict["model"])
+                    model_pre.load_state_dict(load_dict["model"], strict=False)
                     args.logger.info("successfully loaded checkpoints!")
             else:  # session > 0:
                 projector_pre = DINOHead(
@@ -973,7 +1032,7 @@ if __name__ == "__main__":
                     "loading checkpoints from last online session: " + load_dir_online
                 )
                 load_dict = torch.load(load_dir_online)
-                model_pre.load_state_dict(load_dict["model"])
+                model_pre.load_state_dict(load_dict["model"], strict=False)
                 args.logger.info("successfully loaded checkpoints!")
             ####################################################################################################################
 
@@ -981,7 +1040,9 @@ if __name__ == "__main__":
             ####################################################################################################################
             ####################################################################################################################
             backbone_cur = deepcopy(backbone)  # NOTE!!!
-            backbone_cur.load_state_dict(model_pre[0].state_dict())  # NOTE!!!
+            backbone_cur.load_state_dict(
+                model_pre[0].state_dict(), strict=False
+            )  # NOTE!!!
             args.mlp_out_dim_cur = (
                 args.num_labeled_classes + args.num_cur_novel_classes
             )  # total num of classes in the current session
@@ -1120,7 +1181,7 @@ if __name__ == "__main__":
                 + load_dir_online_best
             )
             load_dict = torch.load(load_dir_online_best)
-            model_cur.load_state_dict(load_dict["model"])
+            model_cur.load_state_dict(load_dict["model"], strict=False)
             proto_aug_manager.update_prototypes_online(
                 model_cur,
                 online_session_train_loader_for_new_head_init,
@@ -1128,7 +1189,7 @@ if __name__ == "__main__":
                 args.num_labeled_classes + args.num_cur_novel_classes,
             )
             save_path = os.path.join(
-                args.model_dir, "ProtoAugDict" + "_session-" + str(session + 1) + ".pt"
+                args.model_dir, f"ProtoAugDict_session-{session + 1}.pt"
             )
             args.logger.info("Saving ProtoAugDict to {}.".format(save_path))
             proto_aug_manager.save_proto_aug_dict(save_path)
@@ -1143,8 +1204,7 @@ if __name__ == "__main__":
                 "best_test_acc_unseen_list": args.best_test_acc_unseen_list,
             }
             save_results_path = os.path.join(
-                args.model_dir,
-                "best_acc_list" + "_session-" + str(session + 1) + ".pt",
+                args.model_dir, f"best_acc_list_session-{session + 1}.pt"
             )
             args.logger.info(
                 "Saving results (best acc list) to {}.".format(save_results_path)
