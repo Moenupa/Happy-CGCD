@@ -18,6 +18,7 @@ from data.get_datasets import (
     get_class_splits,
     get_datasets,
 )
+from models.ema import EMA
 from models.utils_proto_aug import ProtoAugManager
 from models.utils_simgcd import (
     DINOHead,
@@ -277,6 +278,8 @@ def train_online(
         )
     cluster_criterion.to(next(student.parameters()).device)
 
+    ema_model = EMA(student, args.ema_new, args.ema_old)
+
     # best acc log
     best_test_acc_all = 0
     best_test_acc_old = 0
@@ -416,6 +419,9 @@ def train_online(
             loss.backward()
             optimizer.step()
 
+            # Update EMA model per step
+            ema_model.update(student)
+
             if batch_idx % args.print_freq == 0:
                 args.logger.info(
                     "Epoch: [{}][{}/{}]\t loss {:.5f}\t {}".format(
@@ -431,6 +437,9 @@ def train_online(
                 args.logger.info(
                     f"Avg old prob: {torch.sum(avg_probs_old_in).item():.4f} | Avg new prob: {torch.sum(avg_probs_new_in).item():.4f} | Pred new ratio: {new_pred_ratio:.4f} | Ground-truth new ratio: {new_true_ratio:.4f}"
                 )
+
+        # handle ema
+        ema_model.apply_shadow(student)
 
         args.logger.info(
             "Train Epoch: {} Avg Loss: {:.4f} ".format(epoch, loss_record.avg)
