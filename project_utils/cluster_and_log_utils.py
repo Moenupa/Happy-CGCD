@@ -1,6 +1,6 @@
-from project_utils.cluster_utils import cluster_acc, np, linear_assignment
 from typing import List
 
+from project_utils.cluster_utils import cluster_acc, linear_assignment, np
 
 # def split_cluster_acc_v1(y_true, y_pred, mask, args):
 
@@ -66,7 +66,7 @@ def split_cluster_acc_v2(y_true, y_pred, mask, args):
         total_old_instances += sum(w[:, i])
     old_acc /= total_old_instances
 
-    if args.train_session == 'online':
+    if args.train_session == "online":
         new_acc = 0
         total_new_instances = 0
         for i in new_classes_gt:
@@ -81,11 +81,20 @@ def split_cluster_acc_v2(y_true, y_pred, mask, args):
 
 EVAL_FUNCS = {
     #'v1': split_cluster_acc_v1,
-    'v2': split_cluster_acc_v2,
+    "v2": split_cluster_acc_v2,
 }
 
-def log_accs_from_preds(y_true, y_pred, mask, eval_funcs: List[str], save_name: str, T: int=None, print_output=False, args=None):
 
+def log_accs_from_preds(
+    y_true,
+    y_pred,
+    mask,
+    eval_funcs: List[str],
+    save_name: str,
+    T: int = None,
+    print_output=False,
+    args=None,
+):
     """
     Given a list of evaluation functions to use (e.g ['v1', 'v2']) evaluate and log ACC results
 
@@ -104,16 +113,15 @@ def log_accs_from_preds(y_true, y_pred, mask, eval_funcs: List[str], save_name: 
     y_pred = y_pred.astype(int)
 
     for i, f_name in enumerate(eval_funcs):
-
         acc_f = EVAL_FUNCS[f_name]
         all_acc, old_acc, new_acc = acc_f(y_true, y_pred, mask, args)
-        log_name = f'{save_name}_{f_name}'
+        log_name = f"{save_name}_{f_name}"
 
         if i == 0:
             to_return = (all_acc, old_acc, new_acc)
 
         if print_output:
-            print_str = f'Epoch {T}, {log_name}: All {all_acc:.4f} | Old {old_acc:.4f} | New {new_acc:.4f}'
+            print_str = f"Epoch {T}, {log_name}: All {all_acc:.4f} | Old {old_acc:.4f} | New {new_acc:.4f}"
             print(print_str)
 
     return to_return

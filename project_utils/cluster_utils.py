@@ -1,28 +1,29 @@
 from __future__ import division, print_function
+
+import matplotlib
 import numpy as np
 import sklearn.metrics
 import torch
 import torch.nn as nn
-import matplotlib
-matplotlib.use('agg')
-from scipy.optimize import linear_sum_assignment as linear_assignment
-import random
-import os
+
+matplotlib.use("agg")
 import argparse
-
-from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
-from sklearn.metrics import adjusted_rand_score as ari_score
-
-from sklearn import metrics
+import os
+import random
 import time
+
+from scipy.optimize import linear_sum_assignment as linear_assignment
+from sklearn import metrics
+from sklearn.metrics import adjusted_rand_score as ari_score
+from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
+
 
 # -------------------------------
 # Evaluation Criteria
 # -------------------------------
 def evaluate_clustering(y_true, y_pred):
-
     start = time.time()
-    print('Computing metrics...')
+    print("Computing metrics...")
     if len(set(y_pred)) < 1000:
         acc = cluster_acc(y_true.astype(int), y_pred.astype(int))
     else:
@@ -31,7 +32,7 @@ def evaluate_clustering(y_true, y_pred):
     nmi = nmi_score(y_true, y_pred)
     ari = ari_score(y_true, y_pred)
     pur = purity_score(y_true, y_pred)
-    print(f'Finished computing metrics {time.time() - start}...')
+    print(f"Finished computing metrics {time.time() - start}...")
 
     return acc, nmi, ari, pur
 
@@ -69,11 +70,11 @@ def purity_score(y_true, y_pred):
     # return purity
     return np.sum(np.amax(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
 
+
 # -------------------------------
 # Mixed Eval Function
 # -------------------------------
 def mixed_eval(targets, preds, mask):
-
     """
     Evaluate clustering metrics on two subsets of data, as defined by the mask 'mask'
     (Mask usually corresponding to `Old' and `New' classes in GCD setting)
@@ -87,36 +88,45 @@ def mixed_eval(targets, preds, mask):
 
     # Labelled examples
     if mask.sum() == 0:  # All examples come from unlabelled classes
+        unlabelled_acc, unlabelled_nmi, unlabelled_ari = (
+            cluster_acc(targets.astype(int), preds.astype(int)),
+            nmi_score(targets, preds),
+            ari_score(targets, preds),
+        )
 
-        unlabelled_acc, unlabelled_nmi, unlabelled_ari = cluster_acc(targets.astype(int), preds.astype(int)), \
-                                                         nmi_score(targets, preds), \
-                                                         ari_score(targets, preds)
-
-        print('Unlabelled Classes Test acc {:.4f}, nmi {:.4f}, ari {:.4f}'
-              .format(unlabelled_acc, unlabelled_nmi, unlabelled_ari))
+        print(
+            "Unlabelled Classes Test acc {:.4f}, nmi {:.4f}, ari {:.4f}".format(
+                unlabelled_acc, unlabelled_nmi, unlabelled_ari
+            )
+        )
 
         # Also return ratio between labelled and unlabelled examples
         return (unlabelled_acc, unlabelled_nmi, unlabelled_ari), mask.mean()
 
     else:
+        labelled_acc, labelled_nmi, labelled_ari = (
+            cluster_acc(targets.astype(int)[mask], preds.astype(int)[mask]),
+            nmi_score(targets[mask], preds[mask]),
+            ari_score(targets[mask], preds[mask]),
+        )
 
-        labelled_acc, labelled_nmi, labelled_ari = cluster_acc(targets.astype(int)[mask],
-                                                               preds.astype(int)[mask]), \
-                                                   nmi_score(targets[mask], preds[mask]), \
-                                                   ari_score(targets[mask], preds[mask])
-
-        unlabelled_acc, unlabelled_nmi, unlabelled_ari = cluster_acc(targets.astype(int)[~mask],
-                                                                     preds.astype(int)[~mask]), \
-                                                         nmi_score(targets[~mask], preds[~mask]), \
-                                                         ari_score(targets[~mask], preds[~mask])
+        unlabelled_acc, unlabelled_nmi, unlabelled_ari = (
+            cluster_acc(targets.astype(int)[~mask], preds.astype(int)[~mask]),
+            nmi_score(targets[~mask], preds[~mask]),
+            ari_score(targets[~mask], preds[~mask]),
+        )
 
         # Also return ratio between labelled and unlabelled examples
-        return (labelled_acc, labelled_nmi, labelled_ari), (
-            unlabelled_acc, unlabelled_nmi, unlabelled_ari), mask.mean()
+        return (
+            (labelled_acc, labelled_nmi, labelled_ari),
+            (unlabelled_acc, unlabelled_nmi, unlabelled_ari),
+            mask.mean(),
+        )
 
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 
@@ -136,15 +146,21 @@ class AverageMeter(object):
 class Identity(nn.Module):
     def __init__(self):
         super(Identity, self).__init__()
+
     def forward(self, x):
         return x
 
 
 class BCE(nn.Module):
-    eps = 1e-7 # Avoid calculating log(0). Use the small value of float16.
+    eps = 1e-7  # Avoid calculating log(0). Use the small value of float16.
+
     def forward(self, prob1, prob2, simi):
         # simi: 1->similar; -1->dissimilar; 0->unknown(ignore)
-        assert len(prob1)==len(prob2)==len(simi), 'Wrong input size:{0},{1},{2}'.format(str(len(prob1)),str(len(prob2)),str(len(simi)))
+        assert len(prob1) == len(prob2) == len(simi), (
+            "Wrong input size:{0},{1},{2}".format(
+                str(len(prob1)), str(len(prob2)), str(len(simi))
+            )
+        )
         P = prob1.mul_(prob2)
         P = P.sum(1)
         P.mul_(simi).add_(simi.eq(-1).type_as(P))
@@ -152,17 +168,15 @@ class BCE(nn.Module):
         return neglogP.mean()
 
 
-def PairEnum(x,mask=None):
-
+def PairEnum(x, mask=None):
     # Enumerate all pairs of feature in x
-    assert x.ndimension() == 2, 'Input dimension must be 2'
+    assert x.ndimension() == 2, "Input dimension must be 2"
     x1 = x.repeat(x.size(0), 1)
     x2 = x.repeat(1, x.size(0)).view(-1, x.size(1))
 
     if mask is not None:
-
         xmask = mask.view(-1, 1).repeat(1, x.size(1))
-        #dim 0: #sample, dim 1:#feature 
+        # dim 0: #sample, dim 1:#feature
         x1 = x1[xmask].view(-1, x.size(1))
         x2 = x2[xmask].view(-1, x.size(1))
 
@@ -188,19 +202,19 @@ def accuracy(output, target, topk=(1,)):
 
 def seed_torch(seed=1029):
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed) # if you are using multi-GPU.
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
 
 def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    if v.lower() in ("yes", "true", "t", "y", "1"):
         return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    elif v.lower() in ("no", "false", "f", "n", "0"):
         return False
     else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        raise argparse.ArgumentTypeError("Boolean value expected.")
