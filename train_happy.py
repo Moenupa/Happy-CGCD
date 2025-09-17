@@ -1,14 +1,12 @@
 import argparse
 import math
 import os
-import time
 import warnings
 from copy import deepcopy
 
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.cluster import KMeans
 from torch.optim import SGD, lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -31,7 +29,7 @@ from models.utils_simgcd import (
 )
 from models.utils_simgcd_pro import get_kmeans_centroid_for_new_head
 from project_utils.cluster_and_log_utils import log_accs_from_preds
-from project_utils.general_utils import AverageMeter, init_experiment, set_seed
+from project_utils.general_utils import AverageMeter, init_experiment
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -171,9 +169,9 @@ def train_offline(student, train_loader, test_loader, args):
                 f"Best ACC on Old Classes on test set: {old_acc_test:.4f}..."
             )
 
-            torch.save(save_dict, args.model_path[:-3] + f"_best.pt")
+            torch.save(save_dict, args.model_path[:-3] + "_best.pt")
             args.logger.info(
-                "model saved to {}.".format(args.model_path[:-3] + f"_best.pt")
+                "model saved to {}.".format(args.model_path[:-3] + "_best.pt")
             )
 
             best_test_acc_old = old_acc_test
@@ -441,14 +439,14 @@ def train_online(
 
             torch.save(
                 save_dict,
-                args.model_path[:-3] + "_session-" + str(current_session) + f"_best.pt",
+                args.model_path[:-3] + "_session-" + str(current_session) + "_best.pt",
             )  # NOTE!!! session
             args.logger.info(
                 "model saved to {}.".format(
                     args.model_path[:-3]
                     + "_session-"
                     + str(current_session)
-                    + f"_best.pt"
+                    + "_best.pt"
                 )
             )
 
@@ -969,7 +967,7 @@ if __name__ == "__main__":
                 )
                 model_pre = nn.Sequential(backbone, projector_pre)
                 load_dir_online = (
-                    args.model_path[:-3] + "_session-" + str(session) + f"_best.pt"
+                    args.model_path[:-3] + "_session-" + str(session) + "_best.pt"
                 )  # NOTE!!! session, best
                 args.logger.info(
                     "loading checkpoints from last online session: " + load_dir_online
@@ -1087,7 +1085,7 @@ if __name__ == "__main__":
                     args.num_labeled_classes,
                 )
                 save_path = os.path.join(
-                    args.model_dir, "ProtoAugDict" + "_offline" + f".pt"
+                    args.model_dir, "ProtoAugDict" + "_offline" + ".pt"
                 )
                 args.logger.info("Saving ProtoAugDict to {}.".format(save_path))
                 proto_aug_manager.save_proto_aug_dict(save_path)
@@ -1115,7 +1113,7 @@ if __name__ == "__main__":
             )
             # NOTE!!! use model_cur_best && online_session_train_loader
             load_dir_online_best = (
-                args.model_path[:-3] + "_session-" + str(session + 1) + f"_best.pt"
+                args.model_path[:-3] + "_session-" + str(session + 1) + "_best.pt"
             )  # NOTE!!! session, best
             args.logger.info(
                 "loading best checkpoints current online session: "
@@ -1130,7 +1128,7 @@ if __name__ == "__main__":
                 args.num_labeled_classes + args.num_cur_novel_classes,
             )
             save_path = os.path.join(
-                args.model_dir, "ProtoAugDict" + "_session-" + str(session + 1) + f".pt"
+                args.model_dir, "ProtoAugDict" + "_session-" + str(session + 1) + ".pt"
             )
             args.logger.info("Saving ProtoAugDict to {}.".format(save_path))
             proto_aug_manager.save_proto_aug_dict(save_path)
@@ -1146,7 +1144,7 @@ if __name__ == "__main__":
             }
             save_results_path = os.path.join(
                 args.model_dir,
-                "best_acc_list" + "_session-" + str(session + 1) + f".pt",
+                "best_acc_list" + "_session-" + str(session + 1) + ".pt",
             )
             args.logger.info(
                 "Saving results (best acc list) to {}.".format(save_results_path)

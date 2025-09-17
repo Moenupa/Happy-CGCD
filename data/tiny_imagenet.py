@@ -1,10 +1,8 @@
 import os
-import warnings
 from copy import deepcopy
 
 import numpy as np
-import pandas as pd
-from torchvision.datasets import ImageFolder, VisionDataset
+from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import default_loader
 from torchvision.datasets.utils import (
     check_integrity,

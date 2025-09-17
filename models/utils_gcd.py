@@ -1,8 +1,5 @@
-import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.nn import functional as F
-from tqdm import tqdm
 
 
 class SupConLoss(torch.nn.Module):

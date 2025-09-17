@@ -2,15 +2,12 @@ import os
 import pickle
 from copy import deepcopy
 
-import torch
-from tqdm import tqdm
-
 from config import osr_split_dir
 from data.cifar import get_cifar_10_datasets, get_cifar_100_datasets
 from data.cifar import subsample_classes as subsample_dataset_cifar
 from data.cub import get_cub_datasets
 from data.cub import subsample_classes as subsample_dataset_cub
-from data.data_utils import MergedDataset, MergedUnlabelledDataset
+from data.data_utils import MergedUnlabelledDataset
 from data.fgvc_aircraft import get_aircraft_datasets
 from data.fgvc_aircraft import subsample_classes as subsample_dataset_aircraft
 from data.imagenet import get_imagenet_100_datasets
@@ -82,7 +79,9 @@ def get_datasets(dataset_name, train_transform, test_transform, args):
         list(args.train_classes) + list(novel_targets_shuffle)
     ):  # NOTE!!! novel_targets_shuffle
         target_transform_dict[cls] = i
-    target_transform = lambda x: target_transform_dict[x]
+
+    def target_transform(x):
+        return target_transform_dict[x]
 
     for dataset_name, dataset in datasets.items():
         if dataset is not None:

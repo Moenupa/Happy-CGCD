@@ -2,7 +2,6 @@ import os
 from copy import deepcopy
 
 import numpy as np
-import pandas as pd
 from scipy import io as mat_io
 from torch.utils.data import Dataset
 from torchvision.datasets.folder import default_loader

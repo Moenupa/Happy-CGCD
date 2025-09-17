@@ -186,7 +186,7 @@ def augment_list():  # 16 oeprations and their ranges
     # ]
 
     # https://github.com/tensorflow/tpu/blob/8462d083dd89489a79e3200bcc8d4063bf362186/models/official/efficientnet/autoaugment.py#L505
-    l = [
+    _list = [
         (AutoContrast, 0, 1),
         (Equalize, 0, 1),
         (Invert, 0, 1),
@@ -205,12 +205,12 @@ def augment_list():  # 16 oeprations and their ranges
         (TranslateYabs, 0.0, 100),
     ]
 
-    return l
+    return _list
 
 
 def augment_list_svhn():  # 16 oeprations and their ranges
     # https://github.com/tensorflow/tpu/blob/8462d083dd89489a79e3200bcc8d4063bf362186/models/official/efficientnet/autoaugment.py#L505
-    l = [
+    _list = [
         (AutoContrast, 0, 1),
         (Equalize, 0, 1),
         (Invert, 0, 1),
@@ -226,7 +226,7 @@ def augment_list_svhn():  # 16 oeprations and their ranges
         (CutoutAbs, 0, 40),
     ]
 
-    return l
+    return _list
 
 
 class Lighting(object):
