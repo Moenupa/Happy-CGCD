@@ -18,6 +18,7 @@ from data.get_datasets import (
     get_class_splits,
     get_datasets,
 )
+from models import lora
 from models.ema import EMA
 from models.utils_proto_aug import ProtoAugManager
 from models.utils_simgcd import (
@@ -788,7 +789,12 @@ if __name__ == "__main__":
     args.interpolation = 3
     args.crop_pct = 0.875
 
-    from models import vision_transformer as vits
+    if args.lora_rank > 0:
+        from models import lora_vision_transformer as vits
+
+        print(f"lora activated with rank {args.lora_rank}")
+    else:
+        from models import vision_transformer as vits
 
     backbone = vits.vit_base()
 
@@ -960,9 +966,6 @@ if __name__ == "__main__":
                     session + 1
                 )
             )
-            args.logger.info("parameter requires_grad listing")
-            for name, m in backbone.named_parameters():
-                args.logger.info(f"{name} {m.requires_grad}")
 
             # dataset for the current session
             online_session_train_dataset = online_session_train_dataset_list[session]
@@ -1043,7 +1046,26 @@ if __name__ == "__main__":
                     block_num = int(name.split(".")[1])
                     if block_num >= args.grad_from_block:
                         m.requires_grad = True
+
+            for name, m in backbone.named_modules():
+                # skip frozen params
+                if "." not in name:
+                    continue
+                if "block" in name:
+                    block_num = int(name.split(".")[1])
+                    if block_num < args.grad_from_block:
+                        continue
+
+                # init active params with peft
+                if isinstance(m, lora.Linear):
+                    # no need to set req grad manually
+                    m.init_lora(session, r=args.lora_rank)
+
             ####################################################################################################################
+
+            args.logger.info("parameter requires_grad listing")
+            for name, m in backbone.named_parameters():
+                args.logger.info(f"{name} {m.requires_grad}")
 
             """load ckpts from last session (session>0) or offline session (session=0)"""
             ####################################################################################################################

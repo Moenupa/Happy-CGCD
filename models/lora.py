@@ -69,23 +69,21 @@ class Linear(nn.Module):
             dropout=dropout,
         )
 
+        # disable w, b, other lora; enable the newly added one
+        self.requires_grad_(False)
+        lora_term.requires_grad_(True)
+
         self.lora_layers.add_module(layer_id, lora_term)
         if layer_weight is not None:
             assert isinstance(layer_weight, (int, float))
             self.lora_weights[layer_id] = layer_weight
 
-        # fix gradients for training:
-        # disable all other lora
-        # enable this new one
-        self.fix_grad(train=True, bias_grad=True)
-        lora_term.fix_grad(train=True)
-
-    def fix_grad(self, train: bool = True, bias_grad: bool = False, **_):
-        self.weight.requires_grad_(False)
-        self.bias.requires_grad_(train and bias_grad)
+    def requires_grad_(self, mode: bool = True):
+        self.weight.requires_grad_(mode)
+        self.bias.requires_grad_(mode)
         for m in self.lora_layers.children():
             m: LoRA_BA_Term
-            m.fix_grad(train)
+            m.requires_grad_(mode)
 
     def merge_lora(self, layer_id: int | str):
         layer_id = f"{layer_id}"
@@ -106,7 +104,7 @@ class Linear(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        override_lora_weights: dict[str, float] = None,
+        override_lora_weights: dict[str, float] | None = None,
     ) -> torch.Tensor:
         r"""
         Forward pass for the linear layer with optional LoRA weights.
@@ -178,10 +176,10 @@ class LoRA_BA_Term(nn.Module):
             nn.init.kaiming_uniform_(self.a, a=5**0.5)
             nn.init.zeros_(self.b)
 
-    def fix_grad(self, train: bool = True, **_):
-        self.a.requires_grad_(train)
-        self.b.requires_grad_(train)
-        self.dropout.train(train)
+    def requires_grad_(self, mode: bool = True):
+        self.a.requires_grad_(mode)
+        self.b.requires_grad_(mode)
+        self.dropout.train(mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (self.dropout(x) @ self.a.T @ self.b.T) * self.scaling
