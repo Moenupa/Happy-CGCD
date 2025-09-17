@@ -186,7 +186,7 @@ def info_nce_logits(features, n_views=2, temperature=1.0, device="cuda"):
     return logits, labels
 
 
-def get_params_groups(model):
+def get_params_groups(model: nn.Sequential):
     regularized = []
     not_regularized = []
     for name, param in model.named_parameters():
@@ -204,12 +204,12 @@ def get_params_groups(model):
 class DistillLoss(nn.Module):
     def __init__(
         self,
-        warmup_teacher_temp_epochs,
-        nepochs,
-        ncrops=2,
-        warmup_teacher_temp=0.07,
-        teacher_temp=0.04,
-        student_temp=0.1,
+        warmup_teacher_temp_epochs: int,
+        nepochs: int,
+        ncrops: int = 2,
+        warmup_teacher_temp: float = 0.07,
+        teacher_temp: float = 0.04,
+        student_temp: float = 0.1,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -243,6 +243,76 @@ class DistillLoss(nn.Module):
                     # we skip cases where student and teacher operate on the same view
                     continue
                 loss = torch.sum(-q * F.log_softmax(student_out[v], dim=-1), dim=-1)
+                total_loss += loss.mean()
+                n_loss_terms += 1
+        total_loss /= n_loss_terms
+        return total_loss
+
+
+class DistillLoss_ratio(nn.Module):
+    def __init__(
+        self,
+        num_classes: int = 100,
+        wait_ratio_epochs: int = 0,
+        ramp_ratio_teacher_epochs: int = 100,
+        nepochs: int = 200,
+        ncrops: int = 2,
+        init_ratio: float = 0.0,
+        final_ratio: float = 1.0,
+        temp_logits: float = 0.1,
+        temp_teacher_logits: float = 0.05,
+        device="cuda",
+    ):
+        super().__init__()
+        self.device = device
+        self.num_classes = num_classes
+        self.temp_logits = temp_logits
+        self.temp_teacher_logits = temp_teacher_logits
+        self.ncrops = ncrops
+        self.ratio_schedule = np.concatenate(
+            (
+                np.zeros(wait_ratio_epochs),
+                np.linspace(init_ratio, final_ratio, ramp_ratio_teacher_epochs),
+                np.ones(nepochs - wait_ratio_epochs - ramp_ratio_teacher_epochs)
+                * final_ratio,
+            )
+        )
+
+    def forward(self, student_output, teacher_output, epoch):
+        """
+        Cross-entropy between softmax outputs of the teacher and student networks.
+        """
+        student_out = student_output / self.temp_logits
+        student_out = student_out.chunk(self.ncrops)
+
+        # confidence filtering
+        ratio_epoch = self.ratio_schedule[epoch]
+        teacher_out = F.softmax(teacher_output / self.temp_teacher_logits, dim=-1)
+        teacher_out = teacher_out.detach().chunk(self.ncrops)
+
+        teacher_label = []
+        for i in range(self.ncrops):
+            top2 = torch.topk(teacher_out[i], k=2, dim=-1, largest=True)[0]
+            top2_div = top2[:, 0] / (top2[:, 1] + 1e-6)
+            filter_number = int(len(teacher_out[i]) * ratio_epoch)
+            topk_filter = torch.topk(top2_div, k=filter_number, largest=True)[1]
+            pseudo_label = F.one_hot(
+                teacher_out[i].argmax(dim=-1), num_classes=self.num_classes
+            )
+            pseudo_label = pseudo_label.float()
+            teacher_out[i][topk_filter] = pseudo_label[topk_filter]
+            teacher_label.append(teacher_out[i])
+
+        total_loss = 0
+        n_loss_terms = 0
+        for iq, q in enumerate(teacher_label):
+            # for v in range(len(student_out)):
+            for iv, v in enumerate(student_out):
+                if iv == iq:
+                    # we skip cases where student and teacher operate on the same view
+                    continue
+                # loss = torch.sum(-q * F.log_softmax(student_out[v], dim=-1), dim=-1)
+                loss = torch.sum(-q * F.log_softmax(v, dim=-1), dim=-1)
                 total_loss += loss.mean()
                 n_loss_terms += 1
         total_loss /= n_loss_terms
